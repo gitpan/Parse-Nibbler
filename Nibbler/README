@@ -52,10 +52,16 @@ The test t/big_verilog.t runs a benchmarking test which
 times how long it takes to parse a large piece of verilog
 gate level code. 6000 lines of verilog in test file. 
 
-It currently benchmarks at about 1140 lines per second.
-(on a Pentium 3 @ 750 Mhz)
+On a P3 @ 750 MHZ, it currently parses gate level verilog at about 
+
+*** 1420 *** lines per second.
+
 
 Current state of package: Alpha
 
 Any of the interfaces to the package may change at 
-the next version.
+the next version. I've swapped from object oriented
+to subroutine calls, so nothing is sacred at this point.
+Hope things will settle down at some point though...
+trying to get the speediest approach possible, then
+I'll iron out the details.

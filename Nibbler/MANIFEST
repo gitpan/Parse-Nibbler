@@ -1,7 +1,5 @@
 README
 Changes
-lgpl-license.html
-lgpl.txt
 MANIFEST
 Makefile.PL
 Nibbler.pm
@@ -13,4 +11,5 @@ t/big_verilog.t
 t/big_verilog.v
 t/VerilogGrammar.pm
 t/Profiler.pm
-
+legal/lgpl-license.html
+legal/lgpl.txt

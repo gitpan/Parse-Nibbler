@@ -32,6 +32,8 @@ BEGIN
 
 use VerilogGrammar;
 
+package Parse::Nibbler;
+
 my $filename = 't/big_verilog.v';
 
 $filename = shift(@ARGV) if(scalar(@ARGV));
@@ -39,10 +41,10 @@ $filename = shift(@ARGV) if(scalar(@ARGV));
 
 my $start_time = [gettimeofday];
 
-my $p = VerilogGrammar->new($filename);
+Parse::Nibbler::new($filename);
 eval
 {
-$p->SourceText;
+SourceText;
 };
 
 print $@;
@@ -54,7 +56,7 @@ my $delay_time = tv_interval( $start_time, $end_time);
 
 print "delay_time is $delay_time seconds \n";
 
-my $line = $p->[Parse::Nibbler::line_number];
+my $line = $Parse::Nibbler::line_number;
 
 print "total number of lines is $line \n";
 
@@ -63,9 +65,9 @@ my $rate = $line / $delay_time;
 print "lines per second = $rate \n";
 
 
-print Dumper \%Parse::Nibbler::timer_information;
+#print Dumper \%Parse::Nibbler::timer_information;
 
-print Dumper \%Parse::Nibbler::caller_counter;
+#print Dumper \%Parse::Nibbler::caller_counter;
 
 
 # print $Parse::Nibbler::misplaced_items ."\n";

@@ -75,3 +75,10 @@ Revision history for Perl extension Parse::Nibbler.
 1.08	Thur Nov 8 2001
 		- rewrote lexer in verilog grammar for speed improvement.
 		- now parsing ~1140 lines per second.
+
+1.10	Wed Nov 21 2001
+		- rewrote entire packages to be subroutine based
+		- instead of method based for speed improvement.
+		- now parsing ~1420 lines per second.
+		- rewrite is pretty rough, just did it to see
+		- how much faster it would be. may recode to clean it up.

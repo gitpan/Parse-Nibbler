@@ -22,11 +22,7 @@ print "ok 1\n";
 use lib "t";
 
 {
-package MyGrammar;
-
-use Parse::Nibbler;
-our @ISA = qw( Parse::Nibbler );
-
+package Parse::Nibbler;
 
 
 ###############################################################################
@@ -34,8 +30,7 @@ Register
 ( 'McCoy', sub
 ###############################################################################
   {
-    my $p = shift;
-    $p->AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
+    AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
   }
 );
 
@@ -48,16 +43,15 @@ Register
 ( 'DeclareProfession', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->AlternateValues('Dammit', 'Gadammit');
-    $p->Name;
-    $p->ValueIs(",");
-    $p->ValueIs("Ima");
-    $p->ValueIs("doctor");
-    $p->ValueIs("not");
-    $p->ValueIs("a");
-    $p->AlternateValues('Bricklayer', 'Ditchdigger');
-    $p->ValueIs("!");
+    AlternateValues('Dammit', 'Gadammit');
+    Name();
+    ValueIs(",");
+    ValueIs("Ima");
+    ValueIs("doctor");
+    ValueIs("not");
+    ValueIs("a");
+    AlternateValues('Bricklayer', 'Ditchdigger');
+    ValueIs("!");
   }
 );
 
@@ -70,11 +64,11 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateValues("He's", "She's");
-    $p->ValueIs("dead");
-    $p->ValueIs(",");
-    $p->Name;
-    $p->ValueIs("!");
+    AlternateValues("He's", "She's");
+    ValueIs("dead");
+    ValueIs(",");
+    Name();
+    ValueIs("!");
   }
 );
 
@@ -84,23 +78,25 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateValues( 'Jim', 'Scotty', 'Spock' );
+    AlternateValues( 'Jim', 'Scotty', 'Spock' );
 
   }
 );
 
 
-} # end package MyGrammar
 
 use Data::Dumper;
 
 
-my $p = MyGrammar->new('t/bones.txt');
+new('t/bones.txt');
 
-$p->McCoy;
 
-print Dumper $p;
+McCoy();
 
+print dumper;
 
 
 print "ok 2\n";
+
+
+} # end package MyGrammar

@@ -41,6 +41,7 @@ $Profiler::do_not_instrument_this_sub{DieOnFatalError}=1;
 
 
 use VerilogGrammar;
+package Parse::Nibbler;
 
 my $filename = 't/verilog.v';
 
@@ -49,12 +50,16 @@ $filename = shift(@ARGV) if(scalar(@ARGV));
 
 my $start_time = [gettimeofday];
 
-my $p = VerilogGrammar->new($filename);
+
+Parse::Nibbler::new($filename);
 
 eval
 {
-$p->SourceText;
+Parse::Nibbler::SourceText();
 };
+
+
+print Parse::Nibbler::dumper();
 
 
 
@@ -63,11 +68,10 @@ print $@;
 my $end_time = [gettimeofday];
 my $delay_time = tv_interval( $start_time, $end_time);
 
-print Dumper $p;
 
 print "delay_time is $delay_time seconds \n";
 
-my $line = $p->[line_number];
+my $line = $line_number;
 
 print "total number of lines is $line \n";
 

@@ -40,6 +40,60 @@ use Parse::Nibbler;
 our $VERSION = '1.08';
 
 
+package Parse::Nibbler;
+
+my $handle;
+
+
+sub dumper
+{
+  my $var = 
+    "\n"
+  . "line number is $Parse::Nibbler::line_number \n"
+  . "current line is $Parse::Nibbler::current_line \n"
+  . "length of current line is $Parse::Nibbler::length_of_current_line \n"
+  . "handle is $handle \n"
+  . "filename is $Parse::Nibbler::filename \n";
+
+  $var .= "list_of_rules_in_progress is \n";
+  $var .= Dumper $Parse::Nibbler::list_of_rules_in_progress;
+  $var .= "lexical_boneyard is \n";
+  $var .= Dumper \@Parse::Nibbler::lexical_boneyard;
+
+  $var .= "done \n";
+
+  return $var;
+}
+
+
+#############################################################################
+#############################################################################
+# create a new parser with:  my $obj = Pkg->new($filename);
+# Where 'Pkg' is a package that defines the grammar you wish to use
+# to parse the text in question.
+# The constructor must be given a filename to start parsing.
+# new is a class method.
+#############################################################################
+#############################################################################
+sub new	
+#############################################################################
+{
+	$Parse::Nibbler::filename = shift;
+
+	open(my $fh, $Parse::Nibbler::filename) or confess "Error opening $Parse::Nibbler::filename \n";
+	$handle = $fh;
+
+	$Parse::Nibbler::length_of_current_line = 0;
+	$Parse::Nibbler::current_line = '';
+	pos($Parse::Nibbler::current_line)=0;
+	$Parse::Nibbler::line_number = 0;
+	@Parse::Nibbler::lexical_boneyard=();
+
+	my $start_rule = [];
+	$Parse::Nibbler::list_of_rules_in_progress = [ $start_rule ];
+
+}
+
 
 #############################################################################
 # Lexer
@@ -48,51 +102,50 @@ our $VERSION = '1.08';
 sub Lexer
 #############################################################################
 {
-  my $p = $_[0];
-
   while(1)
     {
-      my $line = $p->[Parse::Nibbler::line_number];
-      my $col = pos($p->[Parse::Nibbler::current_line]);
 
       # if at end of line
       if (
-	  length($p->[Parse::Nibbler::current_line]) ==
-	  pos($p->[Parse::Nibbler::current_line])
+	  $Parse::Nibbler::length_of_current_line ==
+	  pos($Parse::Nibbler::current_line)
 	 )
 	{
-	  $p->[Parse::Nibbler::line_number] ++;
-	  # print "line ". $p->[Parse::Nibbler::line_number]."\n";
-	  my $fh = $p->[Parse::Nibbler::handle];
-	  $p->[Parse::Nibbler::current_line] = <$fh>;
+	  $Parse::Nibbler::line_number ++;
+	  # print "line ". $Parse::Nibbler::line_number."\n";
+	  my $string =  <$handle>;
 
-	  unless(defined($p->[Parse::Nibbler::current_line]))
+	  unless(defined($string))
 	    {
-	      return bless [ '!EOF!', '!EOF!', $line, $col ], 'Lexical';
+	      return bless [ '!EOF!', '!EOF!', 
+			     $Parse::Nibbler::line_number , 0 ], 'Lexical';
 	    }
 
-	  chomp($p->[Parse::Nibbler::current_line]);
-	  pos($p->[Parse::Nibbler::current_line]) = 0;
+	  chomp($string);
+	  $Parse::Nibbler::current_line = $string;
+	  pos($Parse::Nibbler::current_line) = 0;
+	  $Parse::Nibbler::length_of_current_line=length($string);
 	  redo;
 	}
 
       # look for leading whitespace and possible comment to end of line
-      if($p->[Parse::Nibbler::current_line] =~ /\G\s+(?:\/\/.*)?/gco)
+      if($Parse::Nibbler::current_line =~ /\G\s+(?:\/\/.*)?/gco)
 	{
 	  redo;
 	}
 
 
       # look for possible identifiers
-      if($p->[Parse::Nibbler::current_line] =~ 
+      if($Parse::Nibbler::current_line =~ 
 	 /\G(
-	       \$?[a-zA-Z_][a-zA-Z0-9_\$]*(?:\.[a-zA-Z_][a-zA-Z0-9_\$]*)*
+	       \$?[a-z_][a-z0-9_\$]*(?:\.[a-z_][a-z0-9_\$]*)*
 	     | \$?(?:\\[^\s]+)\s
 	    )
-	 /gcxo
+	 /igcxo
 	)
 	{
-	  return bless ['Identifier', $1, $line, $col], 'Lexical';
+	  return bless ['Identifier', $1, $Parse::Nibbler::line_number, 
+			 pos($Parse::Nibbler::current_line)], 'Lexical';
 	}
 
 
@@ -102,27 +155,29 @@ sub Lexer
       #  [unsigned_number] 'b binary_number
       #  [unsigned_number] 'h hex_number
       #   unsigned_number [ . unsigned_number ] [ e [+-] unsigned_number ]
-      if($p->[Parse::Nibbler::current_line] =~ 
+      if($Parse::Nibbler::current_line =~ 
 	 /\G(
 	       (?:\d+)?\'
 	          (?:
-		     [dD][0-9xXzZ]+
-		   | [oO][0-7xXzZ]+
-		   | [bB][01xXzZ]+
-		   | [hH][0-9a-fA-FxXzZ]
+		     d[0-9xz]+
+		   | o[0-7xz]+
+		   | b[01xz]+
+		   | h[0-9a-fxz]
 		  )
 
 	     | \d+(?:\.\d+)?(?:e[+-]?\d+)?
 	    )
-	 /gcxo
+	 /igcxo
 	)
 	{
-	  return bless ['Number', $1, $line, $col ], 'Lexical';
+	  return bless ['Number', $1, $Parse::Nibbler::line_number, 
+			pos($Parse::Nibbler::current_line) ], 'Lexical';
 	}
 
       # else get a single character and return it.
-      $p->[Parse::Nibbler::current_line] =~ /\G(.)/gco;
-      return bless [$1, $1, $line, $col ], 'Lexical';
+      $Parse::Nibbler::current_line =~ /\G(.)/gco;
+      return bless [$1, $1, $Parse::Nibbler::line_number, 
+		    pos($Parse::Nibbler::current_line) ], 'Lexical';
 
     }
 }
@@ -131,26 +186,6 @@ sub Lexer
 
 
 
-
-
-
-###############################################################################
-Register 
-( 'Number', sub 
-###############################################################################
-  {
-    $_[0]->TypeIs('Number');
-  }
-);
-
-###############################################################################
-Register 
-( 'Identifier', sub 
-###############################################################################
-  {
-    $_[0]->TypeIs('Identifier');
-  }
-);
 
 
 ###############################################################################
@@ -166,7 +201,7 @@ Register
 ( 'SourceText', sub 
 ###############################################################################
   {
-    $_[0]->Description('{*}');
+    Description('*');
   }
 );
 
@@ -175,32 +210,23 @@ Register
 ( 'Description', sub 
 ###############################################################################
   {
-    $_[0]->ModuleDeclaration;
+    ModuleDeclaration();
   }
 );
 
 
-my $module_name;
 
 ###############################################################################
 Register 
 ( 'ModuleDeclaration', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $module_name=undef;
-    $p->ValueIs('module');
-    $module_name = $p->[Parse::Nibbler::list_of_rules_in_progress]->[1];
-    $p->TypeIs('Identifier');
-    $p->ListOfPorts  if ($p->PeekValue eq '(');
-    $p->ValueIs(';');
-    $p->ModuleItem('{*}');
-    $p->ValueIs('endmodule');
-  },
-
-  sub
-  {
-    return $module_name;
+    ValueIs('module');
+    TypeIs('Identifier');
+    ListOfPorts()  if (PeekValue() eq '(');
+    ValueIs(';');
+    ModuleItem('*');
+    ValueIs('endmodule');
   }
 );
 
@@ -209,10 +235,9 @@ Register
 ( 'ListOfPorts', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('(');
-    $p->PortList;
-    $p->ValueIs(')');
+    ValueIs('(');
+    PortList();
+    ValueIs(')');
   }
 );
 
@@ -221,7 +246,7 @@ Register
 ( 'PortList', sub
 ###############################################################################
   {
-    $_[0]->AlternateRules( 'AnonPortExpressionList', 'NamedPortExpressionList' );
+    AlternateRules( 'AnonPortExpressionList', 'NamedPortExpressionList' );
   }
 );
 
@@ -231,7 +256,7 @@ Register
 ( 'NamedPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->NamedPortExpression('{+}/,/');
+    NamedPortExpression('+',',');
   }
 );
 
@@ -240,7 +265,7 @@ Register
 ( 'AnonPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->AnonPortExpression('{+}/,/');
+    AnonPortExpression('+',',');
   }
 );
 
@@ -250,12 +275,11 @@ Register
 ( 'NamedPortExpression', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('.');
-    $p->TypeIs('Identifier');
-    $p->ValueIs('(');
-    $p->AnonPortExpression('{?}');
-    $p->ValueIs(')');
+    ValueIs('.');
+    TypeIs('Identifier');
+    ValueIs('(');
+    AnonPortExpression('?');
+    ValueIs(')');
   }
 );
 
@@ -265,14 +289,13 @@ Register
 ( 'AnonPortExpression', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    if ($p->PeekValue eq '{')
+    if (PeekValue() eq '{')
       {
-	$p->ConcatenatedPortReference;
+	ConcatenatedPortReference();
       }
     else
       {
-	$p->PortReference;
+	PortReference();
       }
   }
 );
@@ -282,14 +305,13 @@ Register
 ( 'PortReference', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    if ($p->PeekType eq 'Identifier')
+    if (PeekType() eq 'Identifier')
       {
-	$p->IdentifierWithPossibleBitSpecifier;
+	IdentifierWithPossibleBitSpecifier();
       }
     else
       {
-	$p->Number;
+	TypeIs('Number');
       }
   }
 );
@@ -300,9 +322,8 @@ Register
 ( 'IdentifierWithPossibleBitSpecifier', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->TypeIs('Identifier');
-    $p->BitSpecifier  if ($p->PeekValue eq '[');
+    TypeIs('Identifier');
+    BitSpecifier()  if (PeekValue() eq '[');
   }
 );
 
@@ -313,11 +334,10 @@ Register
 ( 'BitSpecifier', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('[');
-    $p->TypeIs('Number');
-    $p->ColonNumber  if ($p->PeekValue eq ':');
-    $p->ValueIs(']');
+    ValueIs('[');
+    TypeIs('Number');
+    ColonNumber()  if (PeekValue() eq ':');
+    ValueIs(']');
   }
 );
 
@@ -326,9 +346,8 @@ Register
 ( 'ColonNumber', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs(':');
-    $p->TypeIs('Number');
+    ValueIs(':');
+    TypeIs('Number');
   }
 );
 
@@ -337,10 +356,9 @@ Register
 ( 'ConcatenatedPortReference', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('{');
-    $p->PortReference('{+}/,/');
-    $p->ValueIs('}');
+    ValueIs('{');
+    PortReference('+',',');
+    ValueIs('}');
   }
 );
 
@@ -349,14 +367,13 @@ Register
 ( 'ModuleItem', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    if ($p->PeekValue =~ /input|output|inout/o)
+    if (PeekValue() =~ /input|output|inout/o)
       {
-	$p->DirectionDeclaration;
+	DirectionDeclaration();
       }
     else
       {
-       $p->ModuleInstantiation;
+       ModuleInstantiation();
       };
   }
 );
@@ -367,11 +384,10 @@ Register
 ( 'DirectionDeclaration', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->AlternateValues('input', 'output', 'inout');
-    $p->Range if ($p->PeekValue eq '[');
-    $p->PortIdentifier('{+}');
-    $p->ValueIs(';');
+    AlternateValues('input', 'output', 'inout');
+    Range() if (PeekValue() eq '[');
+    PortIdentifier('+');
+    ValueIs(';');
   }
 );
 
@@ -381,7 +397,7 @@ Register
 ( 'PortIdentifier', sub 
 ###############################################################################
   {
-    $_[0]->TypeIs('Identifier');
+    TypeIs('Identifier');
   }
 );
 
@@ -390,12 +406,11 @@ Register
 ( 'Range', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('[');
-    $p->TypeIs('Number');
-    $p->ValueIs(':');
-    $p->TypeIs('Number');
-    $p->ValueIs(']');
+    ValueIs('[');
+    TypeIs('Number');
+    ValueIs(':');
+    TypeIs('Number');
+    ValueIs(']');
   }
 );
 
@@ -405,11 +420,10 @@ Register
 ( 'ModuleInstantiation', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->TypeIs('Identifier');
-    $p->ParameterValueAssignment  if ($p->PeekValue eq '#');
-    $p->ModuleInstance('{+}/,/');
-    $p->ValueIs(';');
+    TypeIs('Identifier');
+    ParameterValueAssignment()  if (PeekValue() eq '#');
+    ModuleInstance('+',',');
+    ValueIs(';');
   }
 );
 
@@ -418,11 +432,10 @@ Register
 ( 'ParameterValueAssignment', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->ValueIs('#');
-    $p->ValueIs('(');
-    $p->PortList('{?}');
-    $p->ValueIs(')');
+    ValueIs('#');
+    ValueIs('(');
+    PortList('?');
+    ValueIs(')');
 
   }
 );
@@ -432,11 +445,10 @@ Register
 ( 'ModuleInstance', sub 
 ###############################################################################
   {
-    my $p = $_[0];
-    $p->TypeIs('Identifier');
-    $p->ValueIs('(');
-    $p->PortList('{?}');
-    $p->ValueIs(')');
+    TypeIs('Identifier');
+    ValueIs('(');
+    PortList('?');
+    ValueIs(')');
 
   }
 );
@@ -461,7 +473,7 @@ VerilogGrammar - Parsing HUGE gate level verilog files a little bit at a time.
 
 	use VerilogGrammar;
 	my $p = VerilogGrammar->new('filename.v');
-	$p->SourceText;
+	SourceText;
 
 =head1 DESCRIPTION
 

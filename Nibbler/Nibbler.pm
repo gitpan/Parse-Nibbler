@@ -29,7 +29,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.08';
+our $VERSION = '1.10';
 
 
 use Carp;
@@ -37,14 +37,63 @@ use Data::Dumper;
 
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
 
+our $list_of_rules_in_progress;
+our $line_number;
+our $current_line;
+our $length_of_current_line;
+my  $handle;
+our @lexical_boneyard;
+our $filename;
 
-use constant list_of_rules_in_progress => 0;
-use constant line_number => 1;
-use constant current_line => 2;
-use constant handle => 3;
-use constant lexical_boneyard => 4;
-use constant filename => 5;
+sub dumper
+{
+  my $var = 
+    "\n"
+  . "line number is $line_number \n"
+  . "current line is $current_line \n"
+  . "length of current line is $length_of_current_line \n"
+  . "handle is $handle \n"
+  . "filename is $filename \n";
 
+  $var .= "list_of_rules_in_progress is \n";
+  $var .= Dumper $list_of_rules_in_progress;
+  $var .= "lexical_boneyard is \n";
+  $var .= Dumper \@lexical_boneyard;
+
+  $var .= "done \n";
+
+  return $var;
+}
+
+
+
+#############################################################################
+#############################################################################
+# create a new parser with:  my $obj = Pkg->new($filename);
+# Where 'Pkg' is a package that defines the grammar you wish to use
+# to parse the text in question.
+# The constructor must be given a filename to start parsing.
+# new is a class method.
+#############################################################################
+#############################################################################
+sub new	
+#############################################################################
+{
+	$filename = shift;
+
+	open(my $fh, $filename) or confess "Error opening $filename \n";
+	$handle = $fh;
+
+	$length_of_current_line = 0;
+	$current_line = '';
+	pos($current_line)=0;
+	$line_number = 0;
+	@lexical_boneyard=();
+
+	my $temp_rule = [];
+	$list_of_rules_in_progress = [ $temp_rule ];
+
+}
 
 #############################################################################
 #############################################################################
@@ -60,8 +109,8 @@ our @ISA = qw( Exporter );
 
 our @EXPORT = qw( Register );
 
-our %timer_information;
-our %caller_counter;
+#our %timer_information;
+#our %caller_counter;
 
 ###############################################################################
 # Register is an exported subroutine.
@@ -97,19 +146,27 @@ sub __register_long
   *{$pkg_rule} = 
     sub 
       {
-	my $p = $_[0];
-	my $rule_quantifier = $_[1];
+	my $rule_quantifier = $_[0];
 
-	my ($min, $max, $separator);
+	# separator for a list is specified with /separator/
+	# currently, it MUST be a string literal.
+	# i.e. cant use another rule to define a separator.
+	# note: separator must be a SINGLE item returned by lexer.
+	# if lexer returns // as two individual things, then
+	# you can't use it as a separator, since comparison will always fail.
+	# also, separator cannot contain whitespace or be a null string.
+	# i.e. if you want a weird separator, write your lexer to detect it
+	# and return it as an atomic unit.
+	my $separator = $_[1];
+
+	my ($min, $max);
 
 	if(!(defined($rule_quantifier)))
 	  {
 	    $min = 1;
 	    $max = 1;
-	    $rule_quantifier='';
 	  }
-	# quantity is specified via {xxx} syntax
-	elsif( $rule_quantifier =~ s/\{(.+)\}// )
+	elsif( $rule_quantifier =~ /(.+)/ )
 	  {
 	    my $qty=$1;
 	
@@ -148,7 +205,7 @@ sub __register_long
 	      }
 	    else
 	      {
-		$p->FatalError("$pkg_rule called with unknown quantifier {$qty}");
+		FatalError("$pkg_rule called with unknown quantifier {$qty}");
 	      }
 	  }
 	else # could define a separator value with no numeric quantifier.
@@ -157,37 +214,13 @@ sub __register_long
 	    $max = 1;
 	  }
 
-	# separator for a list is specified with /separator/
-	# currently, it MUST be a string literal.
-	# i.e. cant use another rule to define a separator.
-	# note: separator must be a SINGLE item returned by lexer.
-	# if lexer returns // as two individual things, then
-	# you can't use it as a separator, since comparison will always fail.
-	# also, separator cannot contain whitespace or be a null string.
-	# i.e. if you want a weird separator, write your lexer to detect it
-	# and return it as an atomic unit.
-	if ($rule_quantifier =~ s/\/(.+)\///)
-	  {
-	    $separator = $1;
-	  }
-
-	# if there is anything else in the quantifier,
-	# we don't know how to handle it.
-	if($rule_quantifier)
-	  {
-	    $p->FatalError
-	      ("'$pkg_rule' called with unknown quantifier '$rule_quantifier'");
-	    # should probably use caller() to print out who called this rule
-	    # what file, what line number, etc.
-	  }
-
-	print "AAA rule: $pkg_rule,          parser is ". Dumper $p if ($main::DEBUG);
+	print "AAA rule: $pkg_rule,          parser is ". dumper() if ($main::DEBUG);
 
 	# create an array to contain the results of this rule
 	my $this_rule_results = [];
 
-	push(@{$p->[list_of_rules_in_progress]->[-1]}, $this_rule_results);
-	push(@{$p->[list_of_rules_in_progress]}, $this_rule_results);
+	push(@{$list_of_rules_in_progress->[-1]}, $this_rule_results);
+	push(@{$list_of_rules_in_progress}, $this_rule_results);
 
 	#######################################################
 	# check the acceptable quantity of rules are present
@@ -199,13 +232,13 @@ sub __register_long
 	  {
 	    eval
 	      {
-		&$coderef($p);
+		&$coderef;
 		$rules_found++;
 	      };
 
 	    if($@)
 	      {
-		$p->DieOnFatalError;
+		DieOnFatalError();
 		$eval_error = $@;
 		last;
 	      }
@@ -217,14 +250,14 @@ sub __register_long
 	      {
 		eval
 		  {
-		    $p->ValueIs($separator);
+		    ValueIs($separator);
 		  };
 
-		$p->DieOnFatalError if ($@);
+		DieOnFatalError() if ($@);
 	      }
 	  }
 
-	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". dumper() if ($main::DEBUG);
 
 	if( $rules_found >= $min )
 	  {
@@ -235,7 +268,7 @@ sub __register_long
 	  {
 	    eval
 	      {
-		$p->ThrowRule("not enough rules ($pkg_rule) for quantifiers");
+		ThrowRule("not enough rules ($pkg_rule) for quantifiers");
 	      };
 
 	    $eval_error = $@ ;
@@ -245,9 +278,9 @@ sub __register_long
 
 	# no matter what, pop the top off the current rule array.
 	# want current rule to revert to previous rule.
-	pop(@{$p->[list_of_rules_in_progress]});
+	pop(@{$list_of_rules_in_progress});
 
-	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". dumper() if ($main::DEBUG);
 
 	# check to see if this rule passed or failed.
 	my $ret;
@@ -255,15 +288,14 @@ sub __register_long
 	if ($eval_error)
 	  {
 	    # if failed, pop the current rule out of the end of the previous rule.
-	    $p->PutRuleContentsInBoneYard($this_rule_results);
+	    PutRuleContentsInBoneYard($this_rule_results);
 	    $this_rule_results = undef;
 	    if(
-	       (ref($p->[list_of_rules_in_progress]) eq 'ARRAY')
+	       (ref($list_of_rules_in_progress) eq 'ARRAY')
 	       and
-	       (ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
-	      )
-	      {
-		pop(@{$p->[list_of_rules_in_progress]->[-1]});
+	       (ref($list_of_rules_in_progress->[-1]) eq 'ARRAY')
+	      )	      {
+		pop(@{$list_of_rules_in_progress->[-1]});
 	      }
 	    $ret =  0;
 	  }
@@ -293,9 +325,9 @@ sub __register_long
 	    bless($this_rule_results, $package_for_blessing);
 	    $ret = 1;
 	  }
-	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". dumper() if ($main::DEBUG);
 
-	$p->ThrowRule($eval_error) if ( ($eval_error) );
+	ThrowRule($eval_error) if ( ($eval_error) );
 	return $ret;
       }
 }
@@ -304,41 +336,6 @@ sub __register_long
 
 
 
-
-
-#############################################################################
-#############################################################################
-# create a new parser with:  my $obj = Pkg->new($filename);
-# Where 'Pkg' is a package that defines the grammar you wish to use
-# to parse the text in question.
-# The constructor must be given a filename to start parsing.
-# new is a class method.
-#############################################################################
-#############################################################################
-sub new	
-#############################################################################
-{
-	my $pkg = $_[0];
-	my $filename = $_[1];
-
-	open(my $handle, $filename) or confess "Error opening $filename \n";
-
-	my $p = [];
-
-	$p->[filename] = $filename;
-	$p->[handle] = $handle;
-	$p->[current_line] = '';
-	pos($p->[current_line])=0;
-	$p->[line_number] = 0;
-	$p->[lexical_boneyard] = [];
-
-	my $start_rule=[];
-	$p->[list_of_rules_in_progress] = [$start_rule];
-	push(@{$p->[list_of_rules_in_progress]}, $start_rule);
-
-	bless $p, $pkg;
-
-}
 
 #############################################################################
 #############################################################################
@@ -359,57 +356,51 @@ sub new
 sub Lexer
 #############################################################################
 {
-  my $p = $_[0];
-
   while(1)
     {
-      my $line = $p->[line_number];
-      my $col = pos($p->[current_line]);
-
       # if at end of line
       if( 
-	 ( length($p->[current_line]) == 0 )
+	 ( length($current_line) == 0 )
 	 or
-	 ( length($p->[current_line]) == pos($p->[current_line]) )
+	 ( length($current_line) == pos($current_line) )
 	 )
 	{
-	  $p->[line_number] ++;
-	  my $fh = $p->[handle];
-	  $p->[current_line] = <$fh>;
-	  return undef unless(defined($p->[current_line]));
-	  chomp($p->[current_line]);
-	  pos($p->[current_line]) = 0;
+	  $line_number ++;
+	  $current_line = <$handle>;
+	  return undef unless(defined($current_line));
+	  chomp($current_line);
+	  pos($current_line) = 0;
 	  redo;
 	}
 
       # delete any leading whitespace and check it again
-      if( $p->[current_line] =~ /\G\s+/gc) 
+      if( $current_line =~ /\G\s+/gc) 
 	{
 	  redo;
 	}
 
       # look for comment to end of line
-      if($p->[current_line] =~ /\G\#.*/gc)
+      if($current_line =~ /\G\#.*/gc)
 	{
 	  redo;
 	}
 
-      if ($p->[current_line] =~ /\G([a-zA-Z]\w*)/gc) 
+      if ($current_line =~ /\G([a-zA-Z]\w*)/gc) 
 	{
 	  return bless 
-	    [ 'Identifier', $1, $line, $col ],
+	    [ 'Identifier', $1, $line_number, pos($current_line) ],
 	      'Lexical';
 	}
 
-      if ($p->[current_line] =~ /\G(\d+)/gc)
+      if ($current_line =~ /\G(\d+)/gc)
 	{
-	  return bless [ 'Digits', $1, $line, $col ],
+	  return bless [ 'Digits', $1, $line_number, pos($current_line) ],
 	      'Lexical';
 	}
 
-      $p->[current_line] =~ /\G(.)/gc;
+      $current_line =~ /\G(.)/gc;
 
-      return bless [ $1, $1, $line, $col  ],
+      return bless [ $1, $1, $line_number, pos($current_line)  ],
 	'Lexical';
 
     }
@@ -424,10 +415,11 @@ sub FatalError
 {
   eval
     {
-      $_[0]->ThrowRule($_[1]);
+      ThrowRule(shift(@_));
     };
   print $@;
   exit;
+  return 0;
 }
 
 
@@ -435,10 +427,9 @@ sub FatalError
 sub ThrowRule
 ###############################################################################
 {
-  my $msg = $_[1];
-  if(substr($msg, 0, 2) eq '!!')
-    {substr($msg, 0, 29, '');}
+  my $msg = $_[0];
   die ("!!Parse::Nibbler::ThrowRule!!" . $msg . "\n" );
+  return 0;
 }
 
 ###############################################################################
@@ -447,10 +438,10 @@ sub DieOnFatalError
 {
   return unless($@);
   my $error = $@;
-  unless(substr($error, 0, 2) eq '!!')
+  my $prefix = substr($error,0,29);
+  unless ($prefix eq '!!Parse::Nibbler::ThrowRule!!')
     {
-      substr($error, 0, 29, '');
-      $_[0]->FatalError($error);
+      FatalError($error);
     }
 }
 
@@ -459,15 +450,13 @@ sub DieOnFatalError
 sub GetItem
 ###############################################################################
 {
-  my $p = $_[0];
-
-  if (scalar(@{$p->[lexical_boneyard]}))
+  if (scalar(@lexical_boneyard))
     {
-      return  pop(@{$p->[lexical_boneyard]});
+      return  pop(@lexical_boneyard);
     }
   else
     {
-      return  $p->Lexer;
+      return  Lexer();
     }
 }
 ###############################################################################
@@ -477,7 +466,7 @@ sub GetItem
 sub PutRuleContentsInBoneYard
 #############################################################################
 {
-  my ($p,$rule) = @_;
+  my $rule = shift;
 
   while(scalar(@{$rule}))
     {
@@ -485,12 +474,12 @@ sub PutRuleContentsInBoneYard
 
       if(ref($item) and (ref($item) ne 'Lexical') )
 	{
-	  $p->PutRuleContentsInBoneYard($item);
+	  PutRuleContentsInBoneYard($item);
 	}
       else
 	{
-	  #	  $p->PutItemInBoneYard( $item );
-	  push(@{$p->[lexical_boneyard]}, $item );
+	  #	  PutItemInBoneYard( $item );
+	  push(@lexical_boneyard, $item );
 
 	}
     }
@@ -514,24 +503,21 @@ sub PutRuleContentsInBoneYard
 sub TypeIs
 ###############################################################################
 {
-#  my ($p, $type) = @_;
-  my $p=$_[0];
+  my $item = GetItem;
 
-  my $item = $p->GetItem;
-
-  if($item->[0] eq $_[1])
+  if($item->[0] eq $_[0])
     {
       #                PutItemInCurrentRule 
-	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
+	push(@{$list_of_rules_in_progress->[-1]}, $item );
 
       return 1;
     }
   else
     {
       #             PutItemInBoneYard 
-      push(@{$p->[lexical_boneyard]}, $item );
+      push(@lexical_boneyard, $item );
 
-      $p->ThrowRule("Expected type '".$_[1]."'");
+      ThrowRule("Expected type '".$_[0]."'");
       return 0;
     }
 }
@@ -542,15 +528,14 @@ sub TypeIs
 sub PeekType
 ###############################################################################
 {
-  my $p=$_[0];
-  if (scalar(@{$p->[lexical_boneyard]}))
+  if (scalar(@lexical_boneyard))
     {
-      return  $p->[lexical_boneyard]->[-1]->[0];
+      return  $lexical_boneyard[-1]->[0];
     }
   else
     {
-      my $item = $p->GetItem;
-      push(@{$p->[lexical_boneyard]}, $item );
+      my $item = GetItem;
+      push(@lexical_boneyard, $item );
       return $item->[0];
     }
 }
@@ -561,23 +546,20 @@ sub PeekType
 sub ValueIs
 ###############################################################################
 {
-#  my ($p, $value) = @_;
-  my $p = $_[0];
+  my $item = GetItem();
 
-  my $item = $p->GetItem;
-
-  if($item->[1] eq $_[1])
+  if($item->[1] eq $_[0])
     {
-      #      $p->PutItemInCurrentRule( $item );
-	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
+      #      PutItemInCurrentRule( $item );
+	push(@{$list_of_rules_in_progress->[-1]}, $item );
       return 1;
     }
   else
     {
-      #      $p->PutItemInBoneYard( $item );
-      push(@{$p->[lexical_boneyard]}, $item );
+      #      PutItemInBoneYard( $item );
+      push(@lexical_boneyard, $item );
 
-      $p->ThrowRule("Expected value '".$_[1]."'");
+      ThrowRule("Expected value '".$_[0]."'");
       return 0;
     }
 }
@@ -589,15 +571,14 @@ sub ValueIs
 sub PeekValue
 ###############################################################################
 {
-  my $p=$_[0];
-  if (scalar(@{$p->[lexical_boneyard]}))
+  if (scalar(@lexical_boneyard))
     {
-      return  $p->[lexical_boneyard]->[-1]->[1];
+      return  $lexical_boneyard[-1]->[1];
     }
   else
     {
-      my $item = $p->GetItem;
-      push(@{$p->[lexical_boneyard]}, $item );
+      my $item = GetItem;
+      push(@lexical_boneyard, $item );
       return $item->[1];
     }
 }
@@ -608,25 +589,23 @@ sub PeekValue
 sub AlternateValues
 ###############################################################################
 {
-  my $p = shift(@_);
-
-  my $item = $p->GetItem;
+  my $item = GetItem;
   my $actual_value =  $item->[1];
 
   foreach my $alternate (@_)
     {
       if ($alternate eq $actual_value)
       {
-#	$p->PutItemInCurrentRule( $item );
-	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
+#	PutItemInCurrentRule( $item );
+	push(@{$list_of_rules_in_progress->[-1]}, $item );
 	return 1;
       }
     }
 
-#  $p->PutItemInBoneYard( $item );
-  push(@{$p->[lexical_boneyard]}, $item );
+#  PutItemInBoneYard( $item );
+  push(@lexical_boneyard, $item );
 
-  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
+  ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
 }
 
@@ -634,7 +613,6 @@ sub AlternateValues
 sub AlternateRules
 ###############################################################################
 {
-  my $p = shift(@_);
   my @rules = @_;
 
   foreach my $alternate (@rules)
@@ -649,17 +627,14 @@ sub AlternateRules
 	}
 
       ALTERNATE_RULES : eval
-	{
-	  no strict;
-	  $p -> $alternate ( $arguments );
-	};
+	( " no strict; $alternate ( $arguments ); \n" );
 
-      $p->DieOnFatalError;
+      DieOnFatalError;
 
       return 1 if(!($@));
     }
 
-  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
+  ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
 }
 
