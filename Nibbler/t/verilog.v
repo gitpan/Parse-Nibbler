@@ -1,9 +1,10 @@
 
-module my_mod (port1, port2, port3);
+module my_mod ( port1, port2, port3 );
 
 input port1;
 output port3;
 inout port_other;
+
 
 my_mod inst_name 
 	(

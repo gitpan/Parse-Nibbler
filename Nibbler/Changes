@@ -47,3 +47,12 @@ Revision history for Perl extension Parse::Nibbler.
 1.04	Tue Oct 23 2001
 		- verilog grammar needs to accept underscore as a 
 			valid leading character for identifiers.
+
+
+1.05	Wed Oct 31 2001
+		- speed improvements
+		- Register now installs two subroutines
+		-	one that handles arguments (quantifier, separator)
+		-	and one that doesn't take any arguments (faster)
+		- big_verilog.t benchmarks at 650 lines per second.
+		- include a rough draft of a profiler package

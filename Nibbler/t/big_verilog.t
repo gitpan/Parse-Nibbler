@@ -2,7 +2,6 @@
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl test.pl'
 
-
 ######################### We start with some black magic to print on failure.
 
 # Change 1..1 below to 1..last_test_to_print .
@@ -23,15 +22,14 @@ use lib "t";
 use Data::Dumper;
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
 
-#use Profiler;
-
-$Profiler::do_not_instrument_this_sub{main::Parse::Nibbler::DieOnFatalError}=1;
-$Profiler::do_not_instrument_this_sub{DieOnFatalError}=1;
-
+BEGIN
+  {
+   # use Profiler;
+  }
 
 use VerilogGrammar;
 
-my $filename = 't/verilog.v';
+my $filename = 't/big_verilog.v';
 
 $filename = shift(@ARGV) if(scalar(@ARGV));
 
@@ -39,20 +37,17 @@ $filename = shift(@ARGV) if(scalar(@ARGV));
 my $start_time = [gettimeofday];
 
 my $p = VerilogGrammar->new($filename);
-
 eval
 {
 $p->SourceText;
 };
-
-
 
 print $@;
 
 my $end_time = [gettimeofday];
 my $delay_time = tv_interval( $start_time, $end_time);
 
-print Dumper $p;
+#### print Dumper $p;
 
 print "delay_time is $delay_time seconds \n";
 

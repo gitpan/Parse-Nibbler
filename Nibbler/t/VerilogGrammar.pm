@@ -14,10 +14,12 @@ use warnings;
 
 our @ISA = qw( Parse::Nibbler );
 
-use Parse::Nibbler;
 use Data::Dumper;
 
-our $VERSION = '1.04';
+
+use Parse::Nibbler;
+
+our $VERSION = '1.05';
 
 
 #############################################################################
@@ -41,6 +43,7 @@ sub Lexer
 	 )
 	{
 	  $p->{line_number} ++;
+	  # print "line ". $p->{line_number}."\n";
 	  my $fh = $p->{handle};
 	  $p->{current_line} = <$fh>;
 
@@ -256,7 +259,7 @@ Register
 ( 'SourceText', sub 
 ###############################################################################
   {
-    $_[0]->Description('{*}');
+    $_[0]->DescriptionArgs('{*}');
   }
 );
 
@@ -277,9 +280,9 @@ Register
     my $p = $_[0];
     $p->ValueIs('module');
     $p->TypeIs('Identifier');
-    $p->ListOfPorts('{?}');
+    $p->ListOfPortsArgs('{?}');
     $p->ValueIs(';');
-    $p->ModuleItem('{*}');
+    $p->ModuleItemArgs('{*}');
     $p->ValueIs('endmodule');
   }
 );
@@ -311,7 +314,7 @@ Register
 ( 'NamedPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->NamedPortExpression('{+}/,/');
+    $_[0]->NamedPortExpressionArgs('{+}/,/');
   }
 );
 
@@ -320,7 +323,7 @@ Register
 ( 'AnonPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->AnonPortExpression('{+}/,/');
+    $_[0]->AnonPortExpressionArgs('{+}/,/');
   }
 );
 
@@ -334,7 +337,7 @@ Register
     $p->ValueIs('.');
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->AnonPortExpression('{?}');
+    $p->AnonPortExpressionArgs('{?}');
     $p->ValueIs(')');
   }
 );
@@ -346,7 +349,7 @@ Register
 ###############################################################################
   {
     $_[0]->AlternateRules
-      ( 
+      (
        'PortReference', 'ConcatenatedPortReference'
       );
   }
@@ -358,7 +361,7 @@ Register
 ###############################################################################
   {
     $_[0]->AlternateRules
-      ( 
+      (
        'IdentifierWithPossibleBitSpecifier', 'Number'
       );
   }
@@ -372,7 +375,7 @@ Register
   {
     my $p = $_[0];
     $p->TypeIs('Identifier');
-    $p->BitSpecifier('{?}');
+    $p->BitSpecifierArgs('{?}');
   }
 );
 
@@ -386,7 +389,7 @@ Register
     my $p = $_[0];
     $p->ValueIs('[');
     $p->TypeIs('Number');
-    $p->ColonNumber('{?}');
+    $p->ColonNumberArgs('{?}');
     $p->ValueIs(']');
   }
 );
@@ -409,7 +412,7 @@ Register
   {
     my $p = $_[0];
     $p->ValueIs('{');
-    $p->PortReference('{+}/,/');
+    $p->PortReferenceArgs('{+}/,/');
     $p->ValueIs('}');
   }
 );
@@ -435,8 +438,8 @@ Register
   {
     my $p = $_[0];
     $p->AlternateValues('input', 'output', 'inout');
-    $p->Range('{?}');
-    $p->PortIdentifier('{+}');
+    $p->RangeArgs('{?}');
+    $p->PortIdentifierArgs('{+}');
     $p->ValueIs(';');
   }
 );
@@ -473,8 +476,8 @@ Register
   {
     my $p = $_[0];
     $p->TypeIs('Identifier');
-    $p->ParameterValueAssignment('{?}');
-    $p->ModuleInstance('{+}/,/');
+    $p->ParameterValueAssignmentArgs('{?}');
+    $p->ModuleInstanceArgs('{+}/,/');
     $p->ValueIs(';');
   }
 );
@@ -487,7 +490,7 @@ Register
     my $p = $_[0];
     $p->ValueIs('#');
     $p->ValueIs('(');
-    $p->PortList('{?}');
+    $p->PortListArgs('{?}');
     $p->ValueIs(')');
 
   }
@@ -501,7 +504,7 @@ Register
     my $p = $_[0];
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->PortList('{?}');
+    $p->PortListArgs('{?}');
     $p->ValueIs(')');
 
   }

@@ -11,11 +11,13 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.04';
+our $VERSION = '1.05';
 
 
 use Carp;
 use Data::Dumper;
+
+use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
 
 #############################################################################
 #############################################################################
@@ -30,6 +32,9 @@ require Exporter;
 our @ISA = qw( Exporter );
 
 our @EXPORT = qw( Register );
+
+our %timer_information;
+our %caller_counter;
 
 ###############################################################################
 # Register is an exported subroutine.
@@ -48,11 +53,27 @@ sub Register
   my ($calling_package) = caller;
 
   print "registering rule $rulename in package $calling_package \n" if ($main::DEBUG);
-
-  no strict;
-
   my $pkg_rule = $calling_package.'::'.$rulename;
 
+  __register_long($pkg_rule, $coderef);
+
+  __register_short($pkg_rule, $coderef);
+
+}
+
+
+sub __register_long
+{
+  my ($pkg_rule, $coderef) = @_;
+
+  my $sub_rule = $pkg_rule;
+  $sub_rule =~ s/^.*:://;
+
+  my $suffix = 'Args';
+  $suffix = '_args' if($sub_rule=~/_/);
+
+  $pkg_rule .= $suffix;
+  no strict;
   *{$pkg_rule} = 
     sub 
       {
@@ -211,7 +232,7 @@ sub Register
 	# check to see if this rule passed or failed.
 	my $ret;
 
-	if ( (!($rule_completed)) and ($eval_error))
+	if ($eval_error)
 	  {
 	    # if failed, pop the current rule out of the end of the previous rule.
 	    $p->PutRuleContentsInBoneYard($this_rule_results);
@@ -259,6 +280,89 @@ sub Register
       }
 }
 
+
+
+
+
+
+
+sub __register_short
+{
+  my ($pkg_rule, $coderef) = @_;
+
+
+  no strict;
+  *{$pkg_rule} = 
+    sub 
+      {
+	my $p = $_[0];
+
+	print "AAA rule: $pkg_rule,          parser is ". Dumper $p if ($main::DEBUG);
+
+	# create an array to contain the results of this rule
+	my $this_rule_results = [];
+
+	push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
+	push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
+
+	#######################################################
+	# check the acceptable quantity of rules are present
+	#######################################################
+	my $eval_error='';
+	my $rules_found=0;
+
+
+	eval
+	  {
+	    &$coderef($p);
+	    $rules_found++;
+	  };
+
+	if($@)
+	  {
+	    $p->DieOnFatalError;
+	    $eval_error = $@;
+	  }
+
+
+	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	# no matter what, pop the top off the current rule array.
+	# want current rule to revert to previous rule.
+	pop(@{$p->{list_of_rules_in_progress}});
+
+	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	# check to see if this rule passed or failed.
+	my $ret;
+
+	if ($eval_error)
+	  {
+	    # if failed, pop the current rule out of the end of the previous rule.
+	    $p->PutRuleContentsInBoneYard($this_rule_results);
+	    $this_rule_results = undef;
+	    if(
+	       (ref($p->{list_of_rules_in_progress}) eq 'ARRAY')
+	       and
+	       (ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
+	      )
+	      {
+		pop(@{$p->{list_of_rules_in_progress}->[-1]});
+	      }
+	    $ret =  0;
+	  }
+	else
+	  {
+	    bless($this_rule_results, $pkg_rule);
+	    $ret = 1;
+	  }
+	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	$p->ThrowRule($eval_error) if ($eval_error);
+	return $ret;
+      }
+}
+
 #############################################################################
 #############################################################################
 # create a new parser with:  my $obj = Pkg->new($filename);
@@ -282,6 +386,7 @@ sub new
 	   handle=>$handle,
 	   current_line=>'',
 	   line_number => 0,
+	   lexical_boneyard => [],
 
 	  };
 
@@ -390,7 +495,7 @@ sub ThrowRule
 ###############################################################################
 {
     my ($p,$msg) = @_;
-    $msg =~ s/!!Parse::Nibbler::ThrowRule!!//;
+    $msg =~ s/^!!Parse::Nibbler::ThrowRule!!//;
     die ("!!Parse::Nibbler::ThrowRule!!" . $msg . "\n" );
 }
 
@@ -416,11 +521,7 @@ sub GetItem
   my $p = $_[0];
 
   my $item;
-  if(
-     (ref($p->{lexical_boneyard}) eq 'ARRAY')
-     and
-     (scalar(@{$p->{lexical_boneyard}}))
-     )
+  if (scalar(@{$p->{lexical_boneyard}}))
     {
       $item = pop(@{$p->{lexical_boneyard}});
     }
@@ -475,7 +576,9 @@ sub PutRuleContentsInBoneYard
 	}
       else
 	{
-	  $p->PutItemInBoneYard( $item );
+#	  $p->PutItemInBoneYard( $item );
+	  push(@{$p->{lexical_boneyard}}, $item );
+
 	}
     }
 }
@@ -509,7 +612,9 @@ sub TypeIs
     }
   else
     {
-      $p->PutItemInBoneYard( $item );
+#      $p->PutItemInBoneYard( $item );
+      push(@{$p->{lexical_boneyard}}, $item );
+
       $p->ThrowRule("Expected type '$type'");
       return 0;
     }
@@ -530,7 +635,9 @@ sub ValueIs
     }
   else
     {
-      $p->PutItemInBoneYard( $item );
+#      $p->PutItemInBoneYard( $item );
+      push(@{$p->{lexical_boneyard}}, $item );
+
       $p->ThrowRule("Expected value '$value'");
       return 0;
     }
@@ -554,7 +661,9 @@ sub AlternateValues
       }
     }
 
-  $p->PutItemInBoneYard( $item );
+#  $p->PutItemInBoneYard( $item );
+  push(@{$p->{lexical_boneyard}}, $item );
+
   $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
 }
@@ -571,13 +680,42 @@ sub AlternateRules
     {
       $@ = '';
       print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
+
+      ALTERNATE_RULES : eval
+	{
+	  no strict;
+	  $p -> $alternate ;
+	};
+
+      $p->DieOnFatalError;
+
+      return 1 if(!($@));
+    }
+
+  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
+  return 0;
+}
+
+
+###############################################################################
+sub AlternateRulesArgs
+###############################################################################
+{
+  my $p = shift(@_);
+  my @rules = @_;
+
+  foreach my $alternate (@rules)
+    {
+      $@ = '';
+
+      print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
       my $arguments = '';
       if($alternate =~ s/\((.+)\)//)
 	{
 	  $arguments = $1;
 	}
 
-      eval
+      ALTERNATE_RULES : eval
 	{
 	  no strict;
 	  $p -> $alternate ( $arguments );

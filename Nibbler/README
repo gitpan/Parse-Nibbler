@@ -30,8 +30,9 @@ Parse::Nibbler.pm file itself.
 
 Contained in the t/ subdirectory is a grammar for
 parsing gate level verilog netlists, VerilogGrammar.pm.
-It parses about 115 lines of verilog per second.
-
+The test t/big_verilog.t runs a benchmarking test which
+times how long it takes to parse a large piece of verilog
+gate level code. It currently benchmarks at about 650 lines per second.
 
 Current state of package: Alpha
 
