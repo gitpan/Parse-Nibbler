@@ -59,3 +59,14 @@ Revision history for Perl extension Parse::Nibbler.
 
 1.06	Wed Oct 31 2001
 		- minor speed improvements (750 lines per second)
+
+
+1.07	Thur Nov 1 2001
+		- added Peek functionality which prevents a rule 
+		-	from being called if Peek can determine it will fail.
+		- Peek gives a major speed bonus.
+		- Now parsing ~1025 lines per second
+		- removed multiple flavors of rule 
+		-	(rule, rule_args, rule_save, rule_save_args)
+		-	was getting a minor speed saving (~5%)
+		-	But code maintenance was a nightmare.

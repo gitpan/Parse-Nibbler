@@ -24,14 +24,6 @@ use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
 
 
 
-use constant list_of_rules_in_progress => 0;
-use constant line_number=> 1;
-use constant current_line => 2;
-use constant handle => 3;
-use constant lexical_boneyard => 4;
-use constant filename => 5;
-
-
 BEGIN
   {
    # use Profiler;
@@ -62,7 +54,7 @@ my $delay_time = tv_interval( $start_time, $end_time);
 
 print "delay_time is $delay_time seconds \n";
 
-my $line = $p->[line_number];
+my $line = $p->[Parse::Nibbler::line_number];
 
 print "total number of lines is $line \n";
 
@@ -74,5 +66,8 @@ print "lines per second = $rate \n";
 print Dumper \%Parse::Nibbler::timer_information;
 
 print Dumper \%Parse::Nibbler::caller_counter;
+
+
+# print $Parse::Nibbler::misplaced_items ."\n";
 
 print "ok 2\n";

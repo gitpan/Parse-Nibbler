@@ -11,7 +11,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.06';
+our $VERSION = '1.07';
 
 
 use Carp;
@@ -57,31 +57,24 @@ our %caller_counter;
 sub Register
 ###############################################################################
 {
-  my ($rulename, $coderef) = @_;
+  my ($rulename, $coderef, $saveref) = @_;
 
   my ($calling_package) = caller;
 
   print "registering rule $rulename in package $calling_package \n" if ($main::DEBUG);
   my $pkg_rule = $calling_package.'::'.$rulename;
 
-  __register_long($pkg_rule, $coderef);
-
-  __register_short($pkg_rule, $coderef);
+      __register_long($pkg_rule, $coderef);
 
 }
 
 
+###############################################################################
 sub __register_long
+###############################################################################
 {
   my ($pkg_rule, $coderef) = @_;
 
-  my $sub_rule = $pkg_rule;
-  $sub_rule =~ s/^.*:://;
-
-  my $suffix = 'Args';
-  $suffix = '_args' if($sub_rule=~/_/);
-
-  $pkg_rule .= $suffix;
   no strict;
   *{$pkg_rule} = 
     sub 
@@ -295,80 +288,6 @@ sub __register_long
 
 
 
-sub __register_short
-{
-  my ($pkg_rule, $coderef) = @_;
-
-
-  no strict;
-  *{$pkg_rule} = 
-    sub 
-      {
-	my $p = $_[0];
-
-	print "AAA rule: $pkg_rule,          parser is ". Dumper $p if ($main::DEBUG);
-
-	# create an array to contain the results of this rule
-	my $this_rule_results = [];
-
-	push(@{$p->[list_of_rules_in_progress]->[-1]}, $this_rule_results);
-	push(@{$p->[list_of_rules_in_progress]}, $this_rule_results);
-
-	#######################################################
-	# check the acceptable quantity of rules are present
-	#######################################################
-	my $eval_error='';
-
-	eval
-	  {
-	    &$coderef($p);
-	  };
-
-	if($@)
-	  {
-	    $p->DieOnFatalError;
-	    $eval_error = $@;
-	  }
-
-
-	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
-
-	# no matter what, pop the top off the current rule array.
-	# want current rule to revert to previous rule.
-	pop(@{$p->[list_of_rules_in_progress]});
-
-	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
-
-	# check to see if this rule passed or failed.
-	my $ret;
-
-	if ($eval_error)
-	  {
-	    # if failed, pop the current rule out of the end of the previous rule.
-	    $p->PutRuleContentsInBoneYard($this_rule_results);
-	    $this_rule_results = undef;
-	    if(
-	       (ref($p->[list_of_rules_in_progress]) eq 'ARRAY')
-	       and
-	       (ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
-	      )
-	      {
-		pop(@{$p->[list_of_rules_in_progress]->[-1]});
-	      }
-	    $ret =  0;
-	  }
-	else
-	  {
-	    bless($this_rule_results, $pkg_rule);
-	    $ret = 1;
-	  }
-	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
-
-	$p->ThrowRule($eval_error) if ($eval_error);
-	return $ret;
-      }
-}
-
 #############################################################################
 #############################################################################
 # create a new parser with:  my $obj = Pkg->new($filename);
@@ -391,6 +310,7 @@ sub new
 	$p->[filename] = $filename;
 	$p->[handle] = $handle;
 	$p->[current_line] = '';
+	pos($p->[current_line])=0;
 	$p->[line_number] = 0;
 	$p->[lexical_boneyard] = [];
 
@@ -507,14 +427,12 @@ sub ThrowRule
 sub DieOnFatalError
 ###############################################################################
 {
-  my $p = $_[0];
-
   return unless($@);
   my $error = $@;
   unless(substr($error, 0, 2) eq '!!')
     {
       substr($error, 0, 29, '');
-      $p->FatalError($error);
+      $_[0]->FatalError($error);
     }
 }
 
@@ -525,7 +443,6 @@ sub GetItem
 {
   my $p = $_[0];
 
-  #my $item;
   if (scalar(@{$p->[lexical_boneyard]}))
     {
       return  pop(@{$p->[lexical_boneyard]});
@@ -534,38 +451,9 @@ sub GetItem
     {
       return  $p->Lexer;
     }
-
-  #return $item;
 }
 ###############################################################################
 
-################################################################################
-#sub PutItemInCurrentRule
-################################################################################
-#{
-#    my ($p,$item) = @_;
-#
-#    if(ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
-#      {
-#	
-#	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
-#      }
-#    else
-#      {
-#	print "NOT AN ARRAY\n";
-#	push(@{$p->[list_of_rules_in_progress]}, $item );
-#      }
-#}
-
-
-################################################################################
-#sub PutItemInBoneYard
-################################################################################
-#{
-#    my ($p,$item) = @_;
-#
-#    push(@{$p->[lexical_boneyard]}, $item );
-#}
 
 #############################################################################
 sub PutRuleContentsInBoneYard
@@ -609,26 +497,47 @@ sub TypeIs
 ###############################################################################
 {
 #  my ($p, $type) = @_;
-  my $p = $_[0];
+  my $p=$_[0];
 
   my $item = $p->GetItem;
 
   if($item->[0] eq $_[1])
     {
-      #      $p->PutItemInCurrentRule( $item );
+      #                PutItemInCurrentRule 
 	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
 
       return 1;
     }
   else
     {
-      #      $p->PutItemInBoneYard( $item );
+      #             PutItemInBoneYard 
       push(@{$p->[lexical_boneyard]}, $item );
 
       $p->ThrowRule("Expected type '".$_[1]."'");
       return 0;
     }
 }
+
+
+
+###############################################################################
+sub PeekType
+###############################################################################
+{
+  my $p=$_[0];
+  if (scalar(@{$p->[lexical_boneyard]}))
+    {
+      return  $p->[lexical_boneyard]->[-1]->[0];
+    }
+  else
+    {
+      my $item = $p->GetItem;
+      push(@{$p->[lexical_boneyard]}, $item );
+      return $item->[0];
+    }
+}
+
+
 
 ###############################################################################
 sub ValueIs
@@ -654,6 +563,28 @@ sub ValueIs
       return 0;
     }
 }
+
+
+
+
+###############################################################################
+sub PeekValue
+###############################################################################
+{
+  my $p=$_[0];
+  if (scalar(@{$p->[lexical_boneyard]}))
+    {
+      return  $p->[lexical_boneyard]->[-1]->[1];
+    }
+  else
+    {
+      my $item = $p->GetItem;
+      push(@{$p->[lexical_boneyard]}, $item );
+      return $item->[1];
+    }
+}
+
+
 
 ###############################################################################
 sub AlternateValues
@@ -681,37 +612,8 @@ sub AlternateValues
   return 0;
 }
 
-
 ###############################################################################
 sub AlternateRules
-###############################################################################
-{
-  my $p = shift(@_);
-  my @rules = @_;
-
-  foreach my $alternate (@rules)
-    {
-      $@ = '';
-      print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
-
-      ALTERNATE_RULES : eval
-	{
-	  no strict;
-	  $p -> $alternate ;
-	};
-
-      $p->DieOnFatalError;
-
-      return 1 if(!($@));
-    }
-
-  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
-  return 0;
-}
-
-
-###############################################################################
-sub AlternateRulesArgs
 ###############################################################################
 {
   my $p = shift(@_);
@@ -743,6 +645,13 @@ sub AlternateRulesArgs
   return 0;
 }
 
+#############################################################################
+#############################################################################
+#############################################################################
+
+
+
+#############################################################################
 #############################################################################
 #############################################################################
 #############################################################################

@@ -19,225 +19,14 @@ use Data::Dumper;
 
 use Parse::Nibbler;
 
-our $VERSION = '1.05';
-
-
-use constant list_of_rules_in_progress => 0;
-use constant line_number=> 1;
-use constant current_line => 2;
-use constant handle => 3;
-use constant lexical_boneyard => 4;
-use constant filename => 5;
-
-
-#############################################################################
-# Lexer
-#############################################################################
-sub Lexer_old
-#############################################################################
-{
-  my $p = $_[0];
-
-  while(1)
-    {
-      my $line = $p->[line_number];
-      my $col = pos($p->[current_line]);
-
-      # if at end of line
-      if( 
-	 ( length($p->[current_line]) == 0 )
-	 or
-	 ( length($p->[current_line]) == pos($p->[current_line]) )
-	 )
-	{
-	  $p->[line_number] ++;
-	  # print "line ". $p->[line_number]."\n";
-	  my $fh = $p->[handle];
-	  $p->[current_line] = <$fh>;
-
-	  unless(defined($p->[current_line]))
-	    {
-	      return bless [ '!EOF!', '!EOF!', $line, $col ], 'Lexical';
-	    }
-
-	  chomp($p->[current_line]);
-	  pos($p->[current_line]) = 0;
-	  redo;
-	}
-
-      # delete any leading whitespace and check it again
-      if($p->[current_line] =~ /\G\s+/gc)
-	{
-	  redo;
-	}
-
-      # look for comment to end of line
-      if($p->[current_line] =~ /\G\/\/.*/gc)
-	{
-	  redo;
-	}
-
-      # look for identifier (hierarchical)
-      my $identifier = '';
-      if( $p->[current_line] =~ /\G\$/gc )
-	{
-	  $identifier = "\$";   # system task name
-	}
-
-      while(1)
-	{
-	  if ( $p->[current_line] =~ /\G([a-zA-Z_][a-zA-Z0-9_\$]*)/gc )
-	    {$identifier .= $1;}
-
-	  elsif($p->[current_line] =~ /\G(\\[^\s]+)\s/gc) 
-	    {
-	      $identifier .= $1;
-	      pos($p->[current_line]) = pos($p->[current_line]) - 1; 
-	    }
-
-	  # no match and no accumulated identifier string
-	  elsif (length($identifier) == 0)
-	    { last; } 
-
-	  $p->report_error("bad identifier") if ($identifier =~ /\.$/);
-
-	  if ($p->[current_line] =~ /\G\./gc)
-	    {
-	      $identifier .= '.';
-	      redo;
-	    }
-
-	  if ($identifier =~ /\A\$/)
-	    {
-	      if(length($identifier) == 1)
-		{
-		  return bless  ['$', '$', $line, $col ], 'Lexical';
-		}
-	      else
-		{
-		  return bless 
-		    ['system_task_name', $identifier, $line, $col ], 'Lexical';
-		}
-
-	    }
-
-	  else
-	    {
-	      return bless ['Identifier', $identifier, $line, $col ], 'Lexical';
-	    }
-
-	}
-
-      # look for a 'Number' in Verilog style of number
-      # [+-] unsigned_number 
-      # [+-] [unsigned_number] 'd unsigned_number
-      # [+-] [unsigned_number] 'o octal_number
-      # [+-] [unsigned_number] 'b binary_number
-      # [+-] [unsigned_number] 'h hex_number
-      # [+-] unsigned_number . unsigned_number
-      # [+-] unsigned_number [ . unsigned_number ] e [+-] unsigned_number
-
-      # first character must be a number or a '
-      my $number = '';
-
-      # will ignore optional sign at beginning of number for now.
-      # will hope that parser can handle it in rules.
-
-      if ($p->[current_line] =~ /\G([0-9][0-9_]*)/gc)
-	{
-	  $number .= $1;
-	}
-
-      if ( $p->[current_line] =~ /\G(\'[dDoObBhH])/gc )
-	{
-	  $number .= $1;
-	  $number = lc($number);
-
-	  # if no number was given to indicate size, default is 32
-	  unless($number =~ /\A[0-9]/)
-	    {
-	      $number = '32' . $number;
-	    }
-
-	  if($number=~/d$/)
-	    {
-	      $p->[current_line] =~ /\G([0-9][0-9_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid decimal number") 
-		}
-	      $number .= $1;
-	    }
-	  elsif($number=~/o$/)
-	    {
-	      $p->[current_line] =~ /\G([xXzZ0-7][xXzZ0-7_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid octal number") 
-		}
-	      $number .= $1;
-	    }
-	  elsif($number=~/b$/)
-	    {
-	      $p->[current_line] =~ /\G([xXzZ01][xXzZ01_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid binary number") 
-		}	      $number .= $1;
-	    }
-
-	  elsif($number=~/h$/)
-	    {
-	      $p->[current_line] =~ /\G([xXzZ0-9a-fA-F][xXzZ0-9a-fA-F_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid hexadecimal number") 
-		}	      $number .= $1;
-	    }
-	  
-	  if($number =~ /_$/)
-	    {
-	      report_error("Lex: number ended with '_'");
-	    }
-
-	  $number = lc($number);
-	  $number =~ s/_//g;
-	  $number =~ s/\s//g;
-	  return bless ['Number', $number, $line, $col ], 'Lexical';
-	}
-
-      if( $p->[current_line] =~ /\G(\.[0-9][0-9_]*)/gc )
-	{
-	  $number .= $1;
-	}
-
-      if( $p->[current_line] =~ /\G(\s*[eE]\s*[+-]*\s*[0-9][0-9_]*)/gc )
-	{
-	  $number .= $1;
-	}
-
-      if(length($number)>0)
-	{
-	  $number = lc($number);
-	  $number =~ s/\s//g;
-	  $number =~ s/_//g;
-	  return bless ['Number', $number, $line, $col ], 'Lexical';
-	}
-
-      # else get a single character and return it.
-      $p->[current_line] =~ /\G(.)/gc;
-      return bless [$1, $1, $line, $col ], 'Lexical';
-
-    }
-}
-
-
+our $VERSION = '1.07';
 
 
 
 
 #############################################################################
 # Lexer
+#############################################################################
 #############################################################################
 sub Lexer
 #############################################################################
@@ -246,59 +35,58 @@ sub Lexer
 
   while(1)
     {
-      my $line = $p->[line_number];
-      my $col = pos($p->[current_line]);
+      my $line = $p->[Parse::Nibbler::line_number];
+      my $col = pos($p->[Parse::Nibbler::current_line]);
 
       # if at end of line
-      if( 
-	 ( length($p->[current_line]) == 0 )
-	 or
-	 ( length($p->[current_line]) == pos($p->[current_line]) )
+      if (
+	  length($p->[Parse::Nibbler::current_line]) ==
+	  pos($p->[Parse::Nibbler::current_line])
 	 )
 	{
-	  $p->[line_number] ++;
-	  # print "line ". $p->[line_number]."\n";
-	  my $fh = $p->[handle];
-	  $p->[current_line] = <$fh>;
+	  $p->[Parse::Nibbler::line_number] ++;
+	  # print "line ". $p->[Parse::Nibbler::line_number]."\n";
+	  my $fh = $p->[Parse::Nibbler::handle];
+	  $p->[Parse::Nibbler::current_line] = <$fh>;
 
-	  unless(defined($p->[current_line]))
+	  unless(defined($p->[Parse::Nibbler::current_line]))
 	    {
 	      return bless [ '!EOF!', '!EOF!', $line, $col ], 'Lexical';
 	    }
 
-	  chomp($p->[current_line]);
-	  pos($p->[current_line]) = 0;
+	  chomp($p->[Parse::Nibbler::current_line]);
+	  pos($p->[Parse::Nibbler::current_line]) = 0;
 	  redo;
 	}
 
       # delete any leading whitespace and check it again
-      if($p->[current_line] =~ /\G\s+/gc)
+      if($p->[Parse::Nibbler::current_line] =~ /\G\s+/gc)
 	{
 	  redo;
 	}
 
       # look for comment to end of line
-      if($p->[current_line] =~ /\G\/\/.*/gc)
+      if($p->[Parse::Nibbler::current_line] =~ /\G\/\/.*/gc)
 	{
 	  redo;
 	}
 
       # look for identifier (hierarchical)
       my $identifier = '';
-      if( $p->[current_line] =~ /\G\$/gc )
+      if( $p->[Parse::Nibbler::current_line] =~ /\G\$/gc )
 	{
 	  $identifier = "\$";   # system task name
 	}
 
       while(1)
 	{
-	  if ( $p->[current_line] =~ /\G([a-zA-Z_][a-zA-Z0-9_\$]*)/gc )
+	  if ( $p->[Parse::Nibbler::current_line] =~ /\G([a-zA-Z_][a-zA-Z0-9_\$]*)/gc )
 	    {$identifier .= $1;}
 
-	  elsif($p->[current_line] =~ /\G(\\[^\s]+)\s/gc) 
+	  elsif($p->[Parse::Nibbler::current_line] =~ /\G(\\[^\s]+)\s/gc) 
 	    {
 	      $identifier .= $1;
-	      pos($p->[current_line]) = pos($p->[current_line]) - 1; 
+	      pos($p->[Parse::Nibbler::current_line]) = pos($p->[Parse::Nibbler::current_line]) - 1; 
 	    }
 
 	  # no match and no accumulated identifier string
@@ -307,7 +95,7 @@ sub Lexer
 
 	  $p->report_error("bad identifier") if ($identifier =~ /\.$/);
 
-	  if ($p->[current_line] =~ /\G\./gc)
+	  if ($p->[Parse::Nibbler::current_line] =~ /\G\./gc)
 	    {
 	      $identifier .= '.';
 	      redo;
@@ -349,12 +137,12 @@ sub Lexer
       # will ignore optional sign at beginning of number for now.
       # will hope that parser can handle it in rules.
 
-      if ($p->[current_line] =~ /\G([0-9][0-9_]*)/gc)
+      if ($p->[Parse::Nibbler::current_line] =~ /\G([0-9][0-9_]*)/gc)
 	{
 	  $number .= $1;
 	}
 
-      if ( $p->[current_line] =~ /\G(\'[dDoObBhH])/gc )
+      if ( $p->[Parse::Nibbler::current_line] =~ /\G(\'[dDoObBhH])/gc )
 	{
 	  $number .= $1;
 	  $number = lc($number);
@@ -367,7 +155,7 @@ sub Lexer
 
 	  if($number=~/d$/)
 	    {
-	      $p->[current_line] =~ /\G([0-9][0-9_]*)/gc;
+	      $p->[Parse::Nibbler::current_line] =~ /\G([0-9][0-9_]*)/gc;
 	      unless(defined($1))
 		{
 		  $p->report_error("Lex error: invalid decimal number") 
@@ -376,7 +164,7 @@ sub Lexer
 	    }
 	  elsif($number=~/o$/)
 	    {
-	      $p->[current_line] =~ /\G([xXzZ0-7][xXzZ0-7_]*)/gc;
+	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ0-7][xXzZ0-7_]*)/gc;
 	      unless(defined($1))
 		{
 		  $p->report_error("Lex error: invalid octal number") 
@@ -385,7 +173,7 @@ sub Lexer
 	    }
 	  elsif($number=~/b$/)
 	    {
-	      $p->[current_line] =~ /\G([xXzZ01][xXzZ01_]*)/gc;
+	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ01][xXzZ01_]*)/gc;
 	      unless(defined($1))
 		{
 		  $p->report_error("Lex error: invalid binary number") 
@@ -394,7 +182,7 @@ sub Lexer
 
 	  elsif($number=~/h$/)
 	    {
-	      $p->[current_line] =~ /\G([xXzZ0-9a-fA-F][xXzZ0-9a-fA-F_]*)/gc;
+	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ0-9a-fA-F][xXzZ0-9a-fA-F_]*)/gc;
 	      unless(defined($1))
 		{
 		  $p->report_error("Lex error: invalid hexadecimal number") 
@@ -413,12 +201,12 @@ sub Lexer
 	}
       else  # not a based number ('h), is it a float with exponent
 	{
-	  if( $p->[current_line] =~ /\G(\.[0-9][0-9_]*)/gc )
+	  if( $p->[Parse::Nibbler::current_line] =~ /\G(\.[0-9][0-9_]*)/gc )
 	    {
 	      $number .= $1;
 	    }
 
-	  if( $p->[current_line] =~ /\G(\s*[eE]\s*[+-]*\s*[0-9][0-9_]*)/gc )
+	  if( $p->[Parse::Nibbler::current_line] =~ /\G(\s*[eE]\s*[+-]*\s*[0-9][0-9_]*)/gc )
 	    {
 	      $number .= $1;
 	    }
@@ -433,7 +221,7 @@ sub Lexer
 	  }
 
       # else get a single character and return it.
-      $p->[current_line] =~ /\G(.)/gc;
+      $p->[Parse::Nibbler::current_line] =~ /\G(.)/gc;
       return bless [$1, $1, $line, $col ], 'Lexical';
 
     }
@@ -476,7 +264,7 @@ Register
 ( 'SourceText', sub 
 ###############################################################################
   {
-    $_[0]->DescriptionArgs('{*}');
+    $_[0]->Description('{*}');
   }
 );
 
@@ -489,18 +277,28 @@ Register
   }
 );
 
+
+my $module_name;
+
 ###############################################################################
 Register 
 ( 'ModuleDeclaration', sub 
 ###############################################################################
   {
     my $p = $_[0];
+    $module_name=undef;
     $p->ValueIs('module');
+    $module_name = $p->[Parse::Nibbler::list_of_rules_in_progress]->[1];
     $p->TypeIs('Identifier');
-    $p->ListOfPortsArgs('{?}');
+    $p->ListOfPorts  if ($p->PeekValue eq '(');
     $p->ValueIs(';');
-    $p->ModuleItemArgs('{*}');
+    $p->ModuleItem('{*}');
     $p->ValueIs('endmodule');
+  },
+
+  sub
+  {
+    return $module_name;
   }
 );
 
@@ -531,7 +329,7 @@ Register
 ( 'NamedPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->NamedPortExpressionArgs('{+}/,/');
+    $_[0]->NamedPortExpression('{+}/,/');
   }
 );
 
@@ -540,7 +338,7 @@ Register
 ( 'AnonPortExpressionList', sub 
 ###############################################################################
   {
-    $_[0]->AnonPortExpressionArgs('{+}/,/');
+    $_[0]->AnonPortExpression('{+}/,/');
   }
 );
 
@@ -550,11 +348,11 @@ Register
 ( 'NamedPortExpression', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('.');
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->AnonPortExpressionArgs('{?}');
+    $p->AnonPortExpression('{?}');
     $p->ValueIs(')');
   }
 );
@@ -565,10 +363,15 @@ Register
 ( 'AnonPortExpression', sub 
 ###############################################################################
   {
-    $_[0]->AlternateRules
-      (
-       'PortReference', 'ConcatenatedPortReference'
-      );
+    my $p = $_[0];
+    if ($p->PeekValue eq '{')
+      {
+	$p->ConcatenatedPortReference;
+      }
+    else
+      {
+	$p->PortReference;
+      }
   }
 );
 
@@ -577,10 +380,15 @@ Register
 ( 'PortReference', sub 
 ###############################################################################
   {
-    $_[0]->AlternateRules
-      (
-       'IdentifierWithPossibleBitSpecifier', 'Number'
-      );
+    my $p = $_[0];
+    if ($p->PeekType eq 'Identifier')
+      {
+	$p->IdentifierWithPossibleBitSpecifier;
+      }
+    else
+      {
+	$p->Number;
+      }
   }
 );
 
@@ -592,7 +400,7 @@ Register
   {
     my $p = $_[0];
     $p->TypeIs('Identifier');
-    $p->BitSpecifierArgs('{?}');
+    $p->BitSpecifier  if ($p->PeekValue eq '[');
   }
 );
 
@@ -606,7 +414,7 @@ Register
     my $p = $_[0];
     $p->ValueIs('[');
     $p->TypeIs('Number');
-    $p->ColonNumberArgs('{?}');
+    $p->ColonNumber  if ($p->PeekValue eq ':');
     $p->ValueIs(']');
   }
 );
@@ -629,7 +437,7 @@ Register
   {
     my $p = $_[0];
     $p->ValueIs('{');
-    $p->PortReferenceArgs('{+}/,/');
+    $p->PortReference('{+}/,/');
     $p->ValueIs('}');
   }
 );
@@ -639,11 +447,15 @@ Register
 ( 'ModuleItem', sub 
 ###############################################################################
   {
-    $_[0]->AlternateRules
-      ( 
-       'DirectionDeclaration',
-       'ModuleInstantiation'
-      );
+    my $p = $_[0];
+    if ($p->PeekValue =~ /input|output|inout/)
+      {
+	$p->DirectionDeclaration;
+      }
+    else
+      {
+       $p->ModuleInstantiation;
+      };
   }
 );
 
@@ -655,8 +467,8 @@ Register
   {
     my $p = $_[0];
     $p->AlternateValues('input', 'output', 'inout');
-    $p->RangeArgs('{?}');
-    $p->PortIdentifierArgs('{+}');
+    $p->Range if ($p->PeekValue eq '[');
+    $p->PortIdentifier('{+}');
     $p->ValueIs(';');
   }
 );
@@ -693,8 +505,8 @@ Register
   {
     my $p = $_[0];
     $p->TypeIs('Identifier');
-    $p->ParameterValueAssignmentArgs('{?}');
-    $p->ModuleInstanceArgs('{+}/,/');
+    $p->ParameterValueAssignment  if ($p->PeekValue eq '#');
+    $p->ModuleInstance('{+}/,/');
     $p->ValueIs(';');
   }
 );
@@ -707,7 +519,7 @@ Register
     my $p = $_[0];
     $p->ValueIs('#');
     $p->ValueIs('(');
-    $p->PortListArgs('{?}');
+    $p->PortList('{?}');
     $p->ValueIs(')');
 
   }
@@ -721,7 +533,7 @@ Register
     my $p = $_[0];
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->PortListArgs('{?}');
+    $p->PortList('{?}');
     $p->ValueIs(')');
 
   }
