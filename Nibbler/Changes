@@ -1,6 +1,11 @@
 Revision history for Perl extension Parse::Nibbler.
 
-0.01  Wed Aug 15 21:22:41 2001
+0.20  Wed Aug 15 21:22:41 2001
 	- original version; created by h2xs 1.20 with options
 		-X -n Parse::Nibbler
 
+
+0.21	Mon Aug 27 20:00:00 2001
+		- fixed make test, added a use lib statement
+			and added a link in t/ directory
+		- added copyright/license to README file.

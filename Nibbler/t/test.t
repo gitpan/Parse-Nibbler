@@ -18,9 +18,11 @@ print "ok 1\n";
 # (correspondingly "not ok 13") depending on the success of chunk 13
 # of the test code):
 
+use lib "t";
+
 use VerilogGrammar;
 
-my $parser = VerilogGrammar->new('short.v');
+my $parser = VerilogGrammar->new('t/short.v');
 
 SourceText::Rule($parser);
 
