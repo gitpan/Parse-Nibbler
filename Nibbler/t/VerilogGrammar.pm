@@ -11,511 +11,480 @@ require 5.005_62;
 
 use strict;
 use warnings;
-use base 'Parse::Nibbler';
+
+our @ISA = qw( Parse::Nibbler );
+
+use Parse::Nibbler;
 use Data::Dumper;
 
-our $VERSION = '0.01';
+our $VERSION = '1.00';
 
-my $reg = \&Parse::Nibbler::Register;
 
-###############################################################################
-# SourceText := description(*)
-###############################################################################
-package SourceText;
-###############################################################################
-
-sub Rule
+#############################################################################
+# Lexer
+#############################################################################
+sub Lexer
+#############################################################################
 {
-	Description::Rule($_[0]);
-}
+  my $p = shift;
 
-&$reg;  
+  while(1)
+    {
+      my $line = $p->{line_number};
+      my $col = pos($p->{current_line});
 
+      # if at end of line
+      if( 
+	 ( length($p->{current_line}) == 0 )
+	 or
+	 ( length($p->{current_line}) == pos($p->{current_line}) )
+	 )
+	{
+	  $p->{line_number} ++;
+	  my $fh = $p->{handle};
+	  $p->{current_line} = <$fh>;
+	  $p->FlagEndOfFile unless(defined($p->{current_line}));
+	  chomp($p->{current_line});
+	  pos($p->{current_line}) = 0;
+	  redo;
+	}
 
-###############################################################################
-# description := module_declaration | primitive_declaration
-###############################################################################
-package Description;
-###############################################################################
-sub Rule 
-{
-	Parse::Nibbler::OneOrMore::Rule
-		($_[0], \&ModuleDeclaration::Rule );
-}
+      # delete any leading whitespace and check it again
+      if($p->{current_line} =~ /\G\s+/gc)
+	{
+	  redo;
+	}
 
-&$reg;
+      # look for comment to end of line
+      if($p->{current_line} =~ /\G\/\/.*/gc)
+	{
+	  redo;
+	}
 
-###############################################################################
-package ModuleDeclaration;
-###############################################################################
+      # look for identifier (hierarchical)
+      my $identifier = '';
+      if( $p->{current_line} =~ /\G\$/gc )
+	{
+	  $identifier = "\$";   # system task name
+	}
 
-use Data::Dumper;
+      while(1)
+	{
+	  if ( $p->{current_line} =~ /\G([a-zA-Z][a-zA-Z0-9_\$]*)/gc )
+	    {$identifier .= $1;}
 
-sub Rule {
-	return 0 unless(Parse::Nibbler::EatIfSee($_[0], 'module'));
+	  elsif($p->{current_line} =~ /\G(\\[^\s]+)\s/gc) 
+	    {
+	      $identifier .= $1;
+	      pos($p->{current_line}) = pos($p->{current_line}) - 1; 
+	    }
 
-	my %ModuleDeclaration;
-	$ModuleDeclaration{ModuleItem} = [];
+	  # no match and no accumulated identifier string
+	  elsif (length($identifier) == 0)
+	    { last; } 
 
-	    ModuleName::Rule($_[0], $ModuleDeclaration{ModuleName})
-	and Parse::Nibbler::Optional::Rule 
-		($_[0], \&ModulePortList::Rule,
-		 $ModuleDeclaration{ModulePortList})
-	and Parse::Nibbler::Eat($_[0], ';')
-	and Parse::Nibbler::ZeroOrMore::Rule
-		($_[0], \&ModuleItem::Rule, $ModuleDeclaration{ModuleItem})
-	and Parse::Nibbler::Eat($_[0], 'endmodule')
-	or return 0;
+	  $p->report_error("bad identifier") if ($identifier =~ /\.$/);
 
-	print "found module ".$ModuleDeclaration{ModuleName}."\n";
-	#print Dumper \%ModuleDeclaration;
-	return 1;
-}
+	  if ($p->{current_line} =~ /\G\./gc)
+	    {
+	      $identifier .= '.';
+	      redo;
+	    }
 
-&$reg;
-
-
-###############################################################################
-package ModuleItem;	#  
-###############################################################################
-
-sub Rule 
-{
-	return 0 if (Parse::Nibbler::See($_[0], 'endmodule'));
-
-	Parse::Nibbler::Attempt::Rule
-		($_[0], \&PortDirectionDeclaration::Rule, $_[1]) 
-		and return 1;
-
-	Parse::Nibbler::Attempt::Rule
-		($_[0], \&ModuleInstantiation::Rule, $_[1])
-		and return 1;
-
-}
-
-&$reg;
-
-###############################################################################
-package ModuleName;
-###############################################################################
-
-sub Rule 
-{
-	SimpleIdentifier::Rule($_[0], $_[1]);
-}
-
-&$reg;
-
-###############################################################################
-package ModulePortList;
-###############################################################################
-
-sub Rule 
-{
-
-	    Parse::Nibbler::EatIfSee( $_[0], '\(' )
-	and Parse::Nibbler::CommaSeparatedList::Rule
-		( $_[0], \&PortItem::Rule, my $PortItem )
-	and Parse::Nibbler::Eat( $_[0], '\)' ) 
-	or return 0;
-
-	$_[1] = Parse::Nibbler::Bless $PortItem;
-	return 1;
-}
-
-&$reg;
-
-###############################################################################
-package PortItem;
-###############################################################################
-
-sub Rule 
-{
-	SimpleIdentifier::Rule($_[0], $_[1]);
-}
-
-&$reg;
-
-###############################################################################
-# call this and pass in a hash.
-# the keys will be the names of the ports,
-# the data will be the direction
-###############################################################################
-package PortDirectionDeclaration;
-###############################################################################
-
-sub Rule
-{
-	    Parse::Nibbler::Eat($_[0], '(input|output|inout)', my $direction) 
-	and Parse::Nibbler::Optional::Rule($_[0], \&BitSelect::Rule, my $bit)
-	and Parse::Nibbler::CommaSeparatedList::Rule
-		($_[0], \&SimpleIdentifier::Rule, my $port) 
-	and Parse::Nibbler::Eat($_[0], ';')
-	or return 0;
-
-	$_[1] = Parse::Nibbler::Bless [ $port , $direction, $bit ];
-	return 1;	
-}
-
-&$reg;
-
-###############################################################################
-# due to ambiguous situations, this should be last thing that we check for.
-###############################################################################
-package ModuleInstantiation;   
-###############################################################################
-
-sub Rule
-{
-	$_[0]->set_marker( my $mod_inst_marker );
-
-	my %ModuleInstantiation;
-
-	    SimpleIdentifier::Rule($_[0], $ModuleInstantiation{ModuleName} )
-	and Parse::Nibbler::OneOrMore::Rule
-		($_[0], \&ModuleInstance::Rule,
-		$ModuleInstantiation{InstanceList})
-	and Parse::Nibbler::Eat($_[0], ';') 
-	or return 0;
-
-	$mod_inst_marker = 'accept';
-	$_[1] = Parse::Nibbler::Bless \%ModuleInstantiation;
-
-	return 1;
-}
-
-&$reg;
-
-###############################################################################
-package ModuleInstance;
-###############################################################################
-
-sub Rule 
-{
-	my %ModuleInstance;
-
-	    InstanceName::Rule($_[0], $ModuleInstance{InstanceName}) 
-	and Parse::Nibbler::Eat($_[0], '\(' )
-	and ModulePortConnections::Rule
-		($_[0], $ModuleInstance{ModulePortConnections})
-	and Parse::Nibbler::Eat($_[0],  '\)' )
-	or return 0;
-
-	$_[1] = Parse::Nibbler::Bless \%ModuleInstance;
-}
-
-&$reg;
-
-
-###############################################################################
-package InstanceName;
-###############################################################################
-
-sub Rule 
-{
-	SimpleIdentifier::Rule($_[0], $_[1]);
-}
-
-&$reg;
-
-
-###############################################################################
-package ModulePortConnections;
-###############################################################################
-
-
-sub Rule {
-	$_[1] = [];
-
-	# check for empty port connection list
-	return 1 if ( Parse::Nibbler::See($_[0], '\)') );  
-
-	# is next character is a '.'
-	# commit to a named port connection rule.
-	# else commit to an ordered port connection rule.
-	if(Parse::Nibbler::See($_[0], '\.'))
+	  if ($identifier =~ /\A\$/)
+	    {
+	      if(length($identifier) == 1)
 		{
-		return NamedPortConnections::Rule($_[0], $_[1]);
+		  return bless  ['$', '$', $line, $col ], 'Lexical';
+		}
+	      else
+		{
+		  return bless 
+		    ['system_task_name', $identifier, $line, $col ], 'Lexical';
 		}
 
-	else					# must be ordered port list
+	    }
+
+	  else
+	    {
+	      return bless ['Identifier', $identifier, $line, $col ], 'Lexical';
+	    }
+
+	}
+
+      # look for a 'Number' in Verilog style of number
+      # [+-] unsigned_number 
+      # [+-] [unsigned_number] 'd unsigned_number
+      # [+-] [unsigned_number] 'o octal_number
+      # [+-] [unsigned_number] 'b binary_number
+      # [+-] [unsigned_number] 'h hex_number
+      # [+-] unsigned_number . unsigned_number
+      # [+-] unsigned_number [ . unsigned_number ] e [+-] unsigned_number
+
+      # first character must be a number or a '
+      my $number = '';
+
+      # will ignore optional sign at beginning of number for now.
+      # will hope that parser can handle it in rules.
+
+      if ($p->{current_line} =~ /\G([0-9][0-9_]*)/gc)
+	{
+	  $number .= $1;
+	}
+
+      if ( $p->{current_line} =~ /\G(\'[dDoObBhH])/gc )
+	{
+	  $number .= $1;
+	  $number = lc($number);
+
+	  # if no number was given to indicate size, default is 32
+	  unless($number =~ /\A[0-9]/)
+	    {
+	      $number = '32' . $number;
+	    }
+
+	  if($number=~/d$/)
+	    {
+	      $p->{current_line} =~ /\G([0-9][0-9_]*)/gc;
+	      unless(defined($1))
 		{
-		return OrderedPortConnections::Rule($_[0], $_[1]);
+		  $p->report_error("Lex error: invalid decimal number") 
 		}
-
-}
-
-&$reg;
-
-###############################################################################
-package NamedPortConnections;
-###############################################################################
-
-sub Rule 
-{
-	Parse::Nibbler::See($_[0], '(\.)') or return 0;
-
-	Parse::Nibbler::CommaSeparatedList::Rule
-		($_[0], \&NamedPortConnector::Rule, $_[1] ); 
-}
-
-&$reg;
-
-
-
-###############################################################################
-package NamedPortConnector;
-###############################################################################
-
-sub Rule 
-{
-	    Parse::Nibbler::Eat( $_[0], '\.' )
-	and SimpleIdentifier::Rule( $_[0],$_[1] )
-	and Parse::Nibbler::Eat( $_[0], '\(' )
-	and PortConnector::Rule( $_[0],$_[1] )
-	and Parse::Nibbler::Eat( $_[0], '\)' );
-}
-
-&$reg;
-
-
-
-
-###############################################################################
-package OrderedPortConnections;
-###############################################################################
-
-sub Rule 
-{
-	Parse::Nibbler::CommaSeparatedVoidableList::Rule
-		($_[0], \&PortConnector::Rule, $_[1] ); 
-}
-
-&$reg;
-
-###############################################################################
-package PortConnector;
-###############################################################################
-sub Rule
-{
-	   Concatenation::Rule($_[0],$_[1])
-	or Signal::Rule($_[0],$_[1]);
-}
-
-&$reg;
-
-
-
-###############################################################################
-package Concatenation;
-###############################################################################
-sub Rule
-{
-	    Parse::Nibbler::EatIfSee($_[0],	'\{')
-	and Parse::Nibbler::CommaSeparatedList::Rule
-		($_[0], \&Signal::Rule, $_[1])
-	and Parse::Nibbler::EatIfSee($_[0],	'\}')
-	or return 0;
-
-	Parse::Nibbler::Bless $_[1];
-	
-}
-
-&$reg;
-
-###############################################################################
-package Signal;
-###############################################################################
-sub Rule
-{
-	   Variable::Rule($_[0], $_[1])
-	or Constant::Rule($_[0], $_[1]);
-}
-
-###############################################################################
-package Variable;
-###############################################################################
-sub Rule
-{
-	my $signal = [];
-	    SimpleIdentifier::Rule($_[0],$signal->[0])
-	and Parse::Nibbler::Optional::Rule
-		($_[0], \&BitSelect::Rule, $signal->[1])
-	or return 0;
-
-	$_[1] = $signal;
-	Parse::Nibbler::Bless $_[1];
-}
-
-&$reg;
-
-
-###############################################################################
-package BitSelect;
-###############################################################################
-sub Rule
-{
-	my $bit_select = [];
-	    Parse::Nibbler::EatIfSee($_[0],	'\[')
-	and Parse::Nibbler::Eat($_[0], '(\d+)', $bit_select->[0])
-	or return 0;
-
-	if(Parse::Nibbler::EatIfSee($_[0],	'\:'))
+	      $number .= $1;
+	    }
+	  elsif($number=~/o$/)
+	    {
+	      $p->{current_line} =~ /\G([xXzZ0-7][xXzZ0-7_]*)/gc;
+	      unless(defined($1))
 		{
-		Parse::Nibbler::Eat($_[0], '(\d+)', $bit_select->[1])
-		or return 0;
+		  $p->report_error("Lex error: invalid octal number") 
 		}
+	      $number .= $1;
+	    }
+	  elsif($number=~/b$/)
+	    {
+	      $p->{current_line} =~ /\G([xXzZ01][xXzZ01_]*)/gc;
+	      unless(defined($1))
+		{
+		  $p->report_error("Lex error: invalid binary number") 
+		}	      $number .= $1;
+	    }
 
-	Parse::Nibbler::EatIfSee($_[0],	'\]')
-	or return 0;
-	
-	$_[1] = $bit_select;
-	Parse::Nibbler::Bless $_[1];
+	  elsif($number=~/h$/)
+	    {
+	      $p->{current_line} =~ /\G([xXzZ0-9a-fA-F][xXzZ0-9a-fA-F_]*)/gc;
+	      unless(defined($1))
+		{
+		  $p->report_error("Lex error: invalid hexadecimal number") 
+		}	      $number .= $1;
+	    }
+	  
+	  if($number =~ /_$/)
+	    {
+	      report_error("Lex: number ended with '_'");
+	    }
+
+	  $number = lc($number);
+	  $number =~ s/_//g;
+	  $number =~ s/\s//g;
+	  return bless ['Number', $number, $line, $col ], 'Lexical';
+	}
+
+      if( $p->{current_line} =~ /\G(\.[0-9][0-9_]*)/gc )
+	{
+	  $number .= $1;
+	}
+
+      if( $p->{current_line} =~ /\G(\s*[eE]\s*[+-]*\s*[0-9][0-9_]*)/gc )
+	{
+	  $number .= $1;
+	}
+
+      if(length($number)>0)
+	{
+	  $number = lc($number);
+	  $number =~ s/\s//g;
+	  $number =~ s/_//g;
+	  return bless ['Number', $number, $line, $col ], 'Lexical';
+	}
+
+      # else get a single character and return it.
+      $p->{current_line} =~ /\G(.)/gc;
+      return bless [$1, $1, $line, $col ], 'Lexical';
+
+    }
 }
 
-&$reg;
-
-
-
 ###############################################################################
-package Constant;
 ###############################################################################
-sub Rule
-{
-	Parse::Nibbler::EatIfSee
-		($_[0], '([0-9]+)' , my $width );
-
-	$width = 32 unless defined($width);
-	    Parse::Nibbler::Eat($_[0],  "'"  ) 
-	and Parse::Nibbler::Eat($_[0],  '([bBhHoO])', my $base  )
-	or return 0;
-
-	my $match;
-	if($base =~ /b/i)
-		{$match = '([10XZxz]+)';}
-	elsif($base =~ /d/i)
-		{$match = '([0-9XZxz]+)';}
-	elsif($base =~ /d/i)
-		{$match = '([0-9A-Fa-fXZxz]+)';}
-
-	Parse::Nibbler::Eat($_[0], $match, my $value)
-	or return 0;
-
-	$_[1] = [ $width, $base, $value ];
-
-	Parse::Nibbler::Bless $_[1];
-}
-
-&$reg;
-
-
-
 ###############################################################################
-package SimpleIdentifier;
 ###############################################################################
-sub Rule
-{
-	Parse::Nibbler::EatIfSee
-		($_[0], '([A-Za-z_][A-Za-z_0-9\$]*)' , $_[1] ) 
-	and return 1;
-
-	return Parse::Nibbler::Eat($_[0],  '(\\\\[^\s\n]+)' , $_[1] );
-}
-
-&$reg;
-
-
 ###############################################################################
-package ComplexIdentifier;
-###############################################################################
-
-sub Rule
-{
-
-	return 0 unless 
-		( 	(Parse::Nibbler::See($_[0], '[A-Za-z_]'))  
-		  or	(Parse::Nibbler::See($_[0], qr'\\'))  
-		);
-	my $identifier;
-	$_[0]->local_prefix( my $temp_prefix, '' );
-	Parse::Nibbler::EatIfSee($_[0], '\s*');
-
-	my $temp_id;
-	while(Parse::Nibbler::EatIfSee
-		($_[0],  '([A-Za-z_][A-Za-z_0-9\$]*)' , $temp_id ))
-		{
-		$identifier .= $temp_id;
-		$identifier .= '.' if(Parse::Nibbler::EatIfSee
-			($_[0], '\.'));
-		}
-
-	if(Parse::Nibbler::EatIfSee
-		($_[0],  '(\\[^\s\n]+)[\s\n]' , $temp_id ))
-		{
-		unless($identifier=~m/\.\Z/)
-			{
-			$_[0]->report_error('expected "." separator');
-			return 0;
-			}
-		$identifier .= $temp_id;
-		}
-
-	unless (defined($identifier))
-		{
-		$_[0]->report_error('expected identifier');
-		return 0;
-		}
-
-	if ($identifier =~ m/\.$/)
-		{
-		$_[0]->report_error('invalid identifier');
-		return 0;
-		}
-
-	$_[1] = $identifier;
-	return 1;
-}
-
-
-&$reg;
-
-
-
 ###############################################################################
 ###############################################################################
 
-BEGIN
-{
-	return;
-	no strict;
-	return unless $main::DEBUG;
+###############################################################################
+Register 
+( 'SourceText', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->Description('{0:}');
+  }
+);
 
-	my @symbols = keys(%VerilogGrammar::);
-	print "printing symbols\n";
-	foreach my $sym (@symbols)
-		{
-		next unless($sym=~/[a-z]/);
-		print "sym is $sym \n";
-		my $code_ref = \&$sym;
-		*{$sym} = sub
-			{
-			print "    >" x scalar(@{$_[0]->{pos}});
-			print "called $sym \n";
-			my $result = &$code_ref;
-			print "    <" x scalar(@{$_[0]->{pos}});
-			print $sym;
-			if ($result)
-				{
-				print " pass \n";
-				}
-			else
-				{
-				print " fail \n";
-				}
-			return $result;
-			}
-		}
-}
+###############################################################################
+Register 
+( 'Description', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ModuleDeclaration;
+  }
+);
+
+###############################################################################
+Register 
+( 'ModuleDeclaration', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('module');
+    $p->TypeIs('Identifier');
+    $p->ListOfPorts('{0:1}');
+    $p->ValueIs(';');
+    $p->ModuleItem('{0:}');
+    $p->ValueIs('endmodule');
+  }
+);
+
+###############################################################################
+Register 
+( 'ListOfPorts', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('(');
+    $p->PortList;
+    $p->ValueIs(')');
+  }
+);
+
+###############################################################################
+Register
+( 'PortList', sub
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateRules( 'AnonPortExpressionList', 'NamedPortExpressionList' );
+  }
+);
+
+
+###############################################################################
+Register 
+( 'NamedPortExpressionList', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->NamedPortExpression('{1:}/,/');
+  }
+);
+
+###############################################################################
+Register 
+( 'AnonPortExpressionList', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AnonPortExpression('{1:}/,/');
+  }
+);
+
+
+###############################################################################
+Register 
+( 'NamedPortExpression', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('.');
+    $p->TypeIs('Identifier');
+    $p->ValueIs('(');
+    $p->PortExpression('{0:1}');
+    $p->ValueIs(')');
+  }
+);
+
+
+###############################################################################
+Register 
+( 'AnonPortExpression', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateRules( 'PortReference', 'ConcatenatedPortReference' );
+  }
+);
+
+###############################################################################
+Register 
+( 'PortReference', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateRules( 'PortIdBus','PortIdOneBit', 'PortIdNoBit' );
+  }
+);
+
+###############################################################################
+Register 
+( 'PortIdNoBit', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+  }
+);
+
+###############################################################################
+Register 
+( 'PortIdOneBit', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+    $p->ValueIs('[');
+    $p->TypeIs('Number');
+    $p->ValueIs(']');
+  }
+);
+
+###############################################################################
+Register 
+( 'PortIdBus', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+    $p->ValueIs('[');
+    $p->TypeIs('Number');
+    $p->ValueIs(':');
+    $p->TypeIs('Number');
+    $p->ValueIs(']');
+  }
+);
+
+###############################################################################
+Register 
+( 'ConcatenatedPortReference', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('{');
+    $p->PortReference('{1:} /,/');
+    $p->ValueIs('}');
+  }
+);
+
+###############################################################################
+Register 
+( 'ModuleItem', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateRules
+      ( 
+       'DirectionDeclaration',
+       'ModuleInstantiation'
+      );
+  }
+);
+
+
+###############################################################################
+Register 
+( 'DirectionDeclaration', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateValues('input', 'output', 'inout');
+    $p->Range('{0:1}');
+    $p->PortIdentifier('{1:}');
+    $p->ValueIs(';');
+  }
+);
+
+
+###############################################################################
+Register 
+( 'PortIdentifier', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+  }
+);
+
+###############################################################################
+Register 
+( 'Range', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('[');
+    $p->TypeIs('Number');
+    $p->ValueIs(':');
+    $p->TypeIs('Number');
+    $p->ValueIs(']');
+  }
+);
+
+
+###############################################################################
+Register 
+( 'ModuleInstantiation', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+    $p->ParameterValueAssignment('{0:1}');
+    $p->ModuleInstance('{1:}/,/');
+    $p->ValueIs(';');
+  }
+);
+
+###############################################################################
+Register 
+( 'ParameterValueAssignment', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->ValueIs('#');
+    $p->ValueIs('(');
+    $p->PortList('{0:1}');
+    $p->ValueIs(')');
+
+  }
+);
+
+###############################################################################
+Register 
+( 'ModuleInstance', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->TypeIs('Identifier');
+    $p->ValueIs('(');
+    $p->PortList('{0:1}');
+    $p->ValueIs(')');
+
+  }
+);
+
+
+
+
 
 
 ###############################################################################
@@ -532,17 +501,11 @@ VerilogGrammar - Parsing HUGE gate level verilog files a little bit at a time.
 =head1 SYNOPSIS
 
 	use VerilogGrammar;
-	my $parser = VerilogGrammar->new('filename.v');
-	$parser->design_items;
+	my $p = VerilogGrammar->new('filename.v');
+	$p->design_items;
 
 =head1 DESCRIPTION
 
-This module defines a grammar for parsing simple gate-level verilog netlists.
-It uses Parse::Nibbler so that large files can be parsed in the program.
-The parser accumulates information on a module by module basis as it
-parses the file. To do something with this information, create a new
-package which overloads the design_items method and do something with
-each module as it is parsed.
 
 This module is intended to be an example module that uses Parse::Nibbler.
 

@@ -3,6 +3,9 @@ Changes
 MANIFEST
 Makefile.PL
 Nibbler.pm
-t/test.t
+t/bones.t
+t/bones.txt
+t/verilog.t
+t/verilog.v
 t/VerilogGrammar.pm
-t/short.v
+

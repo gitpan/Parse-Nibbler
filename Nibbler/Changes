@@ -15,3 +15,13 @@ Revision history for Perl extension Parse::Nibbler.
 
 0.23	Tue Aug 28
 		- put use base module name in quotes, in VerilogGrammar.pm
+
+
+1.00	Tue Oct 15
+		- Major rewrite
+		- interface is much easier to use.
+		- do not require a separate package for each rule.
+		- subroutine name is name of rule.
+		- added a lexer which gets rid of a window of text.
+		- now lex the file once, and then process lexicals after that.
+		- Still in alpha stages

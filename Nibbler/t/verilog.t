@@ -19,11 +19,19 @@ print "ok 1\n";
 # of the test code):
 
 use lib "t";
+use Data::Dumper;
 
 use VerilogGrammar;
 
-my $parser = VerilogGrammar->new('t/short.v');
+my $parser = VerilogGrammar->new('t/verilog.v');
+eval
+{
+$parser->SourceText;
+};
 
-SourceText::Rule($parser);
+print $@;
+
+print Dumper $parser;
+
 
 print "ok 2\n";

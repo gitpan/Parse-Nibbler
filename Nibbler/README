@@ -2,35 +2,14 @@
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
 
-
-
-Parse::Nibbler is an alpha release of a pure perl based parser.
+Parse::Nibbler is a  parser that allows you to write grammars in pure perl.
 
 It is a parser designed to parse HUGE files, a little bit at a time.
+Basically, it nibbles at a file while it parses.
 
 Grammars are written in pure perl using subroutines defined
-in the Parse::Nibbler package. An example package is included
-in the t/ directory called t/VerilogGrammar.pm. This is a perl
-module which defines a subset of the Verilog Grammar.
+in the Parse::Nibbler package. 
 
-It parses approximately 125 lines of Verilog per second.
-which ain't exactly great, but it ain't too bad either.
-
-The only current debugging feature is to put -DEBUG on the
-command line when you run the perl script. This will spit
-out what rule is being tested and whether it passed or failed.
-
-The reason it's called Parse::Nibbler is because it parses
-part of a file at a time. Rather than read an entire file 
-into memory as a string, it keeps a file-handle open as it
-parses, and checks to see where in the string it is currently
-parsing. 
-
-As it nears the end of the string, it reads some more text in.
-As the current position goes far beyond the beginning of the string,
-it deletes the text from teh beggining of the string.
-
-Basically, it nibbles at a file while it parses.
 
 installation instructions are:
 gunzip (tarball).tar.gz
@@ -42,40 +21,13 @@ make
 make test
 make install
 
-Currently, the only debug support is to call the script with the
--DEBUG command line option. This will dump out rules as they 
-are being tested, and whether they pass or fail.
 
-The current version is pure procedurally based perl code.
-I had written another Verilog grammar using Parse::RecDescent,
-and it parsed about 10 lines of verilog per __minute__. 
-And I only found this out after debugging a 1500 rule grammar.
+After you've done the install, you can cd into the t/ subdirectory
+and take a look at the test examples.
 
-That hurt.
+The main documentation is POD at the end of the Parse::Nibbler.pm file itself.
 
-So, I was a little concerned about speed, especially since I
-specifically wanted to parse huge files. I've been told that
-OOPerl is much slower than procedural perl. I'm not sure if it
-is worth it or not to use the procedural approach. The only
-way to find out is to rewrite it using OOPerl, and do benchmark.
 
-The code is a little difficult to use in procedural form.
+Current state of package: Alpha
 
-Anyway, I wanted to release this to CPAN and see if anyone else
-found it useful or interesting. I also wanted to get it out before
-I went on vacation.
-
-This module has been on my to-do list for a couple of years now.
-See Hardware::Verilog::Parser my first attempt at doing this.
-Hardware::Verilog::Parser uses Parse::RecDescent, and it's taken
-me two years to find some time to learn how parsers work and write
-my own.
-
-Hope you find it useful.
-
-If there's interest, I'll spend some time to clean it up.
-Otherwise I'll use it for my own purposes. And maybe turn
-it into a specialized Verilog parser.
-
-Greg
-
+Any of the interfaces to the package may change at the next version.

@@ -11,7 +11,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '0.23';
+our $VERSION = '1.00';
 
 
 use Carp;
@@ -25,112 +25,232 @@ use Data::Dumper;
 #############################################################################
 #############################################################################
 
-#############################################################################
-# this array contains a list of all package namespaces that contain rules.
-#############################################################################
-our @packages;
-#############################################################################
+require Exporter;
 
-#############################################################################
-#############################################################################
-#
-# class subroutines
-#
-#############################################################################
-#############################################################################
+our @ISA = qw( Exporter );
 
-#############################################################################
-# Register a package namespace with the parser
-#############################################################################
+our @EXPORT = qw( Register );
+
+###############################################################################
 sub Register
-#############################################################################
+###############################################################################
 {
-	croak "don't pass parameters to Register " if (scalar(@_));
-	my ($package) = caller;
-	print "registering $package \n";
-	push(@packages, $package);
-}
+  my ($rulename, $coderef) = @_;
 
-#############################################################################
-sub Bless
-#############################################################################
-{
-	croak "only pass one parameter to Bless " unless(scalar(@_) == 1);
-
-	my $ref = ref($_[0]);
-	croak "can only Bless a reference " unless($ref);
-
-	return unless (
-		   ($ref eq 'SCALAR')
-		or ($ref eq 'ARRAY')
-		or ($ref eq 'HASH')
-		or ($ref eq 'CODE')
-		);
-
-	my ($package) = caller;
-
-	return bless $_[0], $package;	
-}
-
-#############################################################################
-sub Debug
-#############################################################################
-{
-	no strict;
-	PKG : foreach my $pkg (@packages)
-		{
-		my @symbols;
-		my $string = '@symbols = keys(%'.$pkg.'::);';
-		eval($string);
-		my $found_rule = 0;
-		foreach my $symbol (@symbols)
-			{
-			print "pkg is $pkg, symbol is $symbol\n";
-			if($symbol eq 'Rule')
-				{
-				$found_rule = 1;
-				last;
-				}
-
-			unless($found_rule)
-				{
-				warn "no Rule sub in $pkg  \n";
-				next PKG;
-				}
-			}
-
-		my $pkg_qualified_sub_name = $pkg.'::Rule';
-		print "pkg_qualified_sub_name is $pkg_qualified_sub_name \n";
-		my $code_ref = \&$pkg_qualified_sub_name;
+  my ($calling_package) = caller;
 
 
+  print "registering rule $rulename in package $calling_package \n" if ($main::DEBUG);
 
-		*{$pkg_qualified_sub_name} = sub
-			{
-			print "    >" x scalar(@{$_[0]->{pos}});
-			print "called $pkg_qualified_sub_name \n";
-			my $result = &$code_ref;
-			print "    <" x scalar(@{$_[0]->{pos}});
-			print $pkg_qualified_sub_name;
-			if ($result)
-				{
-				print " pass \n";
-				}
-			else
-				{
-				print " fail \n";
-				}
-			return $result;
-			}
-		}
+  no strict;
+
+  my $pkg_rule = $calling_package.'::'.$rulename;
+
+  *{$pkg_rule} = 
+    sub 
+      {
+	my $p = shift(@_);
+	my $rule_quantifier = shift(@_);
+	$rule_quantifier = '' unless(defined($rule_quantifier));
+
+	my ($min, $max, $separator);
+
+	# quantity is specified via {min:max} syntax
+	if( $rule_quantifier =~ s/(\{.+\})// )
+	  {
+	    my $qty=$1;
+	    $qty =~ s/\s//g;
+	
+	    # {3} means exactly 3
+	    if( $qty =~ /\{(\d+)\}/ )
+	      {
+		$min = $1;
+		$max = $min;
+	      }
+
+	    # {3:} means 3 or more
+	    elsif ( $qty =~ /\{(\d+)\:\}/ )
+	      {
+		$min = $1;
+	      }
+
+	    # {3:5} means 3 to 5, inclusive
+	    elsif ( $qty =~ /\{(\d+)\:(\d+)\}/ )
+	      {
+		$min = $1;
+		$max = $2
+	      }
+	  }
+	else
+	  {
+	    $min = 1;
+	    $max = 1;
+	  }
+
+	# separator for a list is specified with /separator/
+	# currently, it MUST be a string literal.
+	# i.e. cant use another rule to define a separator.
+	# also, separator cannot contain whitespace or be a null string
+	if ($rule_quantifier =~ s/\/(.+)\///)
+	  {
+	    $separator = $1;
+	    if($separator =~ /\s/)
+	      {
+		die ("separator /$separator/ cannot contain whitespace");
+	      }
+	    if(length($separator) == 0)
+	      {
+		die ("separator of length zero is not supported");
+	      }
+	  }
+
+	# if there is anything else in the quantifier, 
+	# we don't know how to handle it.
+	
+	$rule_quantifier =~ s/\s//g;
+	if($rule_quantifier)
+	  {
+	    die("'$pkg_rule' called with unknown quantifier $rule_quantifier");
+	    # should probably use caller() to print out who called this rule
+	    # what file, what line number, etc.
+	  }
+
+	print "AAA rule: $pkg_rule,          parser is ". Dumper $p if ($main::DEBUG);
+
+	# create an array to contain the results of this rule
+	my $this_rule_results = [];
+	my $first_rule = 0;
+	if(!(exists($p->{list_of_rules_in_progress})))
+	  {
+	    $p->{list_of_rules_in_progress} = [$this_rule_results];
+	    push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
+	    $first_rule = 1;
+	  }
+	else
+	  {
+	    push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
+	    push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
+	  }
+
+	#######################################################
+	# check the acceptable quantity of rules are present
+	#######################################################
+	my $eval_error='';
+	my $rule_succeeded=0;
+	my $rules_found=0;
+
+	while(1)
+	  {
+	    eval
+	      {
+		$rule_succeeded=&$coderef($p, @_);
+	      };
+
+	    if($@)
+	      {
+		$eval_error = $@;
+		last;
+	      }
+
+	    $rules_found++;
+
+	    if ( (defined($max)) and ($rules_found >= $max) )
+	      {
+		last;
+	      }
+
+	    # now look for a separator
+	    if(defined($separator))
+	      {
+		eval
+		  {
+		    $p->ValueIs($separator);
+		  };
+
+		if($@)
+		  {
+		    $eval_error = $@ if $p->ErrorIsEndOfFile;
+		  }
+	      }
+	  }
+
+	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	#check to see if we met the minimum requirement
+	# if we did, any eval errors (except EOF) can be ignored
+	if($rules_found>=$min)
+	  {
+	    $eval_error = '' unless( $p->ErrorIsEndOfFile );
+	  }
+
+	elsif(!($eval_error))
+	  {
+	    $eval_error =  "not enough rules ($pkg_rule) for quantifiers";
+	  }
+	print "CCC rule: $pkg_rule,  eval is $eval_error \n" if ($main::DEBUG);
 
 
-}
+	# no matter what, pop the top off the current rule array.
+	# want current rule to revert to previous rule.
+	my $pop = pop(@{$p->{list_of_rules_in_progress}});
 
-INIT
-{
-	return unless $main::DEBUG;
-	Debug();
+	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	# check to see if this rule passed or failed.
+	my $ret;
+
+	if ( 
+	    (
+	     (!($rule_completed)) 
+	     and  
+	     (($eval_error) and ($eval_error!~/EOF/))
+	    )
+	   )
+	  {
+	    # if failed, pop the current rule out of the end of the previous rule.
+	    $p->PutRuleContentsInBoneYard($this_rule_results);
+	    $this_rule_results = undef;
+	    if(
+	       (ref($p->{list_of_rules_in_progress}) eq 'ARRAY')
+	       and
+	       (ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
+	      )
+	      {
+		pop(@{$p->{list_of_rules_in_progress}->[-1]});
+	      }
+	    $ret =  0;
+	  }
+	else
+	  {
+	    my $package_for_blessing = $pkg_rule;
+	    if(
+	       (
+		(scalar(@$this_rule_results)>1) and 
+		( ($min > 1) or (!(defined($max))) or ($max > 1) )
+	       )
+	      or
+	       (defined($separator))
+	      )
+	      {
+		$package_for_blessing=
+		  "Parse::Nibbler::ListOfRules($pkg_rule";
+
+		if(defined($separator))
+		  {
+		    $package_for_blessing .= ", /$separator/";
+		  }
+
+		$package_for_blessing .= ")";
+
+	      }
+	    bless($this_rule_results, $package_for_blessing);
+	    $ret = 1;
+	  }
+	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
+
+	$p->FlagEndOfFile if ( defined($eval_error) and ($eval_error =~ /EOF/) ) ;
+	return $ret;
+      }
 
 }
 
@@ -140,40 +260,6 @@ INIT
 # create a new parser with:  my $obj = P->new;
 #############################################################################
 #############################################################################
-# object data:
-# 
-# all object data is subject to change.
-#
-# filename -> name of file being read (this is passed into constructor)
-# handle -> filehandle of file being read
-# string -> current string excerpt from file being parsed
-# pos -> an array of string positions.
-#		first index is the first position in string being parsed.
-#		as you step into sub Rules, you can push a new 'pos' onto
-#		this array like a stack. if rule fails, pop off pos.
-#		if rule suceeds, shift everything off to end of rule.
-# prefix_string -> any string you want to put at start of pattern
-#			i.e. if you want to ignore any whitespace that
-#			prefixes your token, set this to \s*
-#			if you want to be completely explicit in your
-#			tokens, set this to ''
-# lines_deleted -> indicates how many lines from file have been parsed
-#		so far and thrown away. i.e. as file is read in and parsed,
-#		successful parsing moves a pointer forward. When pointer
-#		gets far enough from beginning of string, the string is
-#		deleted from the start of string to the pointer.
-#		(this prevents the entire file being stored as a string
-#		in memory)
-#		The lines_deleted attribute indicates how many lines we've
-#		deleted from the string in memory. Current line number is
-#		then calculated by lines_deleted + number of lines to current
-#		pointer position.
-#############################################################################
-
-
-#############################################################################
-# create a new nibbler parser
-#############################################################################
 sub new	
 #############################################################################
 {
@@ -182,902 +268,327 @@ sub new
 
 	open(my $handle, $filename) or confess "Error opening $filename \n";
 
+	my $obj =
+	  {
+	   filename=>$filename,
+	   handle=>$handle,
+	   current_line=>'',
+	   line_number => 0,
 
-	my $obj = 
-		{ 
-		filename=>$filename, 
-		handle=>$handle, 
-		string=>'', 
-		prefix_string=> [ '\s*' ], 
-		pos=>[ 0 ], 
-		lines_deleted => 0,
-		prefix_package => 'Parser::Nibbler::Prefix',
-		marker_package => 'Parser::Nibbler::Marker',
-		};
+	  };
 
 	bless $obj, $pkg;
 
 }
 
 #############################################################################
-# If we're done processing a large chunk of text, flush it.
-#
-# i.e. When the first pos pointer has moved quite a bit from the beginning of 
-# the string, you can delete the text from start to pos pointer.
-#
-# this method gets called every m// or s/// operator,
-# therefore want to do as little as possible for many calls.
-# every once in a while, want to cut off the beginning of the string
-# up to where it's been completely parsed, and then create a new string.
-# 
-# need to update the lines_deleted attribute to indicate how many lines
-# were removed from the string.
+# Lexer
+# a rudimentary lexer
+# your higher level module should overload this subroutine.
+# it is provided here for simple, rudimentary lexing.
 #############################################################################
-
-sub check_full_belly
+sub Lexer
+#############################################################################
 {
+  my $p = shift;
 
-	if( $_[0]->{pos}->[0] > 5000 )
-		{
-		my $first_pos = $_[0]->{pos}->[0];
+  while(1)
+    {
+      my $line = $p->{line_number};
+      my $col = pos($p->{current_line});
 
-		#############################################################
-		# get deleted text so we can count line numbers.
-		#############################################################
-		my $deleted_text = substr( $_[0]->{string}, 0, $first_pos );
+      # if at end of line
+      if( 
+	 ( length($p->{current_line}) == 0 )
+	 or
+	 ( length($p->{current_line}) == pos($p->{current_line}) )
+	 )
+	{
+	  $p->{line_number} ++;
+	  my $fh = $p->{handle};
+	  $p->{current_line} = <$fh>;
+	  return undef unless(defined($p->{current_line}));
+	  chomp($p->{current_line});
+	  pos($p->{current_line}) = 0;
+	  redo;
+	}
 
-		#############################################################
-		# now count number of \n in deleted text and add it to 
-		# the lines_deleted attribute.
-		#############################################################
-		my $n_cnt = 0;
-		while($deleted_text =~ /\G\n/g) 
-			{ $n_cnt++; }
-		
-		$_[0]->{lines_deleted} += $n_cnt;
+      # delete any leading whitespace and check it again
+      if( $p->{current_line} =~ /\G\s+/gc) 
+	{
+	  redo;
+	}
 
-		#############################################################
-		# update the string, throw away the old text at beginning.
-		#############################################################
-		$_[0]->{string} = substr( $_[0]->{string}, $first_pos );
+      # look for comment to end of line
+      if($p->{current_line} =~ /\G\#.*/gc)
+	{
+	  redo;
+	}
 
-		#############################################################
-		# just chopped off the front of the string from 0 to firstpos.
-		# need to update all the pos pointers in the array,
-		# by subtracting the number of characters we deleted.
-		#############################################################
-		my $pos;
-		foreach $pos (@{$_[0]->{pos}})
-			{
-			unless($pos=~/\Amarker_/)
-				{$pos -= $first_pos;}
-			}
-		}
+      if ($p->{current_line} =~ /\G([a-zA-Z]\w*)/gc) 
+	{
+	  return bless 
+	    [ 'Identifier', $1, $line, $col ],
+	      'Lexical';
+	}
 
+      if ($p->{current_line} =~ /\G(\d+)/gc)
+	{
+	  return bless [ 'Digits', $1, $line, $col ],
+	      'Lexical';
+	}
+
+      $p->{current_line} =~ /\G(.)/gc;
+
+      return bless [ $1, $1, $line, $col  ],
+	'Lexical';
+
+    }
 }
 
 
 #############################################################################
-# return true if you want to start appending new data from file, 
-# else return false
+# FatalError
 #############################################################################
-#
-# Note that subroutine keep_appending will allow some hysterisis
-# between when you start_appending and when you keep_appending.
-#
-# The intent is that you append a bunch of text once, do a bunch of matches,
-# and then append another bunch of text. every match must check to see
-# if it should start appending. the tests for start_appending 
-# must be less strict than the tests for keep_appending.
-#
-# because this is called repeatedly (for EVERY m// or s///),
-# want fastest test first, 
-# also, once early tests pass, would like following tests to pass
-# under "normal" circumstances. 
-# (if first test passes, the rest should "fall through")
-#
-# i.e. if we add 5000 characters, then 
-# under most circumstances, we'll have enough lines and enough words.
-# the additional testing is only to cover oddball cases where
-# we might end up adding 5000 characters of whitespace, and our match
-# "bottoms out".  
-# i.e. we don't want to hit the end of the string in a m// and fail
-# when we would have matched if we had only read more lines from the file.
-#
-# if your grammar has oddball rules, where all you have is punctuation,
-# or whitespace, or some odd thing like that, then you will need to 
-# overload this method with another rule that guarantees you will have
-# enough text in the string to perform whatever match you may need to perform.
+sub FatalError
 #############################################################################
-
-sub start_filling_plate
 {
-
-	# need to append if length of remaining text is less than min required
-	return 1 if
-	(
-		( length($_[0]->{string}) - ($_[0]->{pos}->[-1]) ) 
-			< 
-		1000
-	);
-
-	return 0;
-}
-
-sub keep_filling_plate
-{
-
-	# need to append if length of remaining text is less than min required
-	return 1 if
-	(
-		( length($_[0]->{string}) - ($_[0]->{pos}->[-1]) ) 
-			< 
-		5000
-	);
-
-
-	return 0;
+  my ($p,$msg) = @_;
+  eval
+    {
+      $p->RuleFailed($msg);
+    };
+  print $@;
+  exit;
 }
 
 
-sub read_block
+###############################################################################
+sub RuleFailed
+###############################################################################
 {
-	my $handle = $_[0]->{handle};
-	my $line_count = 0;
-	while(<$handle>)
-		{
-		$_[0]->{string} .= $_;
-		last if (100 == $line_count++);
-		}
+    my ($p,$msg) = @_;
 
-}
-
-#############################################################################
-# append some more text from file if needed.
-# Note that start_filling_plate should have more generous requirements
-# than keep_filling_plate. 
-# When we detect that we should start_filling_plate, want keep_filling_plate
-# to add a lot more text than what start_filling_plate requires.
-# that way, once we add a bunch of text, we can do many matches (m//)
-# without having to append more text from the file.
-# want file reading to be infrequent.
-#############################################################################
-sub check_empty_plate
-{
-	if  (Parse::Nibbler::start_filling_plate($_[0]) ) 
-		{
-		my $handle = $_[0]->{handle};
-		until(eof($handle))
-			{
-			Parse::Nibbler::read_block($_[0]);
-			last unless(Parse::Nibbler::keep_filling_plate($_[0]));
-			}
-		}	
-}
-	
-	
-#############################################################################
-# check the string, make sure it is ready to do a regular expression.
-# 	check_full_belly 
-# 	check_empty_plate
-#############################################################################
-sub check_for_full_belly_or_empty_plate
-{
-	Parse::Nibbler::check_full_belly($_[0]) ;		 
-	Parse::Nibbler::check_empty_plate($_[0]) ;	
+    die ($msg . "\n" );
 }
 
 
-#############################################################################
-# report_error
-# call this and pass it a string describing the error.
-# if no markers are set, this sub will report the error
-# and die.
-#
-# if the markers are set,
-# it is assumed that the grammar is trying something that 
-# could fail, in which case, it will just reject the marker,
-# and try something else.
-#############################################################################
-sub report_error
-#############################################################################
+###############################################################################
+sub FlagEndOfFile
+###############################################################################
 {
-	return if (scalar(keys(%{$_[0]->{marker_hash}})));
+  my ($p) = @_;
+  die ("EOF MATES\n" );
+}
 
-	my $err_str = $_[1];
-	$err_str = '' unless (defined($err_str));
+###############################################################################
+sub ErrorIsEndOfFile
+###############################################################################
+{
+  my ($p) = @_;
+  if ( defined($@) and ($@=~/EOF/) )
+    {return 1;}
+  else
+    {return 0;}
+}
 
-	my $location = Parse::Nibbler::current_location($_[0]);
-	die "Error: ". $err_str. "\n" . $location ;
+###############################################################################
+sub GetItem
+###############################################################################
+{
+  my ($p) = @_;
 
+  my $item;
+  if(
+     (ref($p->{lexical_boneyard}) eq 'ARRAY')
+     and
+     (scalar(@{$p->{lexical_boneyard}}))
+     )
+    {
+      $item = pop(@{$p->{lexical_boneyard}});
+    }
+  else
+    {
+      $item = $p->Lexer;
+    }
+
+  $p->FlagEndOfFile unless(defined($item));
+
+  return $item;
+}
+###############################################################################
+
+###############################################################################
+sub PutItemInCurrentRule
+###############################################################################
+{
+    my ($p,$item) = @_;
+
+    if(ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
+      {
+	push(@{$p->{list_of_rules_in_progress}->[-1]}, $item );
+      }
+    else
+      {
+	push(@{$p->{list_of_rules_in_progress}}, $item );
+      }
 }
 
 
-
-#############################################################################
-# this method will return a descriptive string indicating where the parser is
-# located in the file. return string may be multi-line,
-# especially when parser supports `include statements, etc.
-#############################################################################
-sub current_location
+###############################################################################
+sub PutItemInBoneYard
+###############################################################################
 {
-	my $prefix = $_[0]->{prefix_string}->[-1];
-	Parse::Nibbler::EatIfSee($_[0], $prefix );
-	Parse::Nibbler::See($_[0], '(.*)', my $next_token);
+    my ($p,$item) = @_;
 
-
-	my $str_to_pos = substr( $_[0]->{string}, 0, $_[0]->{pos}->[-1]);
-	print "start pos is xxx". $str_to_pos. "xxx\n";
-
-	# calculate line number in file
-	my $string_lines = 1;
-	while($str_to_pos=~s/(\A[^\n]*\n)//m)
-		{
-		print "xxx".$1;
-		$string_lines++;
-		}
-
-	my $line_number = $_[0]->{lines_deleted} + $string_lines;
-
-	# calculate horizontal position in file:
-	$str_to_pos=~s/\t/tttttttt/g;	# replace tabs with 8 characters
-	my $vertical_position = length($str_to_pos);
-
-	my $location = 
-		"\t".
-		"near '$next_token' ".
-		"\n".
-		"\t".
-		"filename:". $_[0]->{filename} ."  ".
-		"line:$line_number  ".
-		" column:$vertical_position  ".
-		"\n";
+    push(@{$p->{lexical_boneyard}}, $item );
 }
 
-
 #############################################################################
-#
-# This is the master method called by all other methods.
-#
-# this method acts like m/\G$prefix$pattern/mgc on the string.
-#
-# my $match = $obj->m(pattern);
-# my @matches = $obj->m(pattern);
-#
-# if you want to capture match using parens, 
-# and you're only doing one match, then you will need
-# to put the $match scalar in list context by putting it in parens.
-#
-# my ( $match ) = $obj->m('(\w+)');
-#
-# this is the fastest way to catch a single matching parenthesis.
-# the variables $1 and $2 will not be available in your code.
-#
-#############################################################################
-sub _private_match
-{
-	Parse::Nibbler::check_for_full_belly_or_empty_plate($_[0]);
-	my $patt=
-		  '\G'
-		. $_[0]->{prefix_string}->[-1]
-		. $_[1];
-
-	if ($main::DEBUG)
-		{
-		print "patt is $patt \n" ;
-		$_[0]->{string}=~ m/\G\s*(.*)/mgc;
-		print "pos is at $1\n";
-		print "pos array is : ";
-		foreach my $posit (@{$_[0]->{pos}})
-			{
-			print "$posit, ";
-			}
-		print "\n";
-		}
-
-	pos($_[0]->{string}) = $_[0]->{pos}->[-1];
-
-	#####################################################################
-	# do regular expression to see if match was successful.
-	# if there are any additional parameters passed in, 
-	# then assume they are supposed to receive match values, $1, $2, etc.
-	# use eval to get $1, $2, etc values and assign them into @_ ....
-	#####################################################################
-	my $match_success = $_[0]->{string} =~ m/$patt/mgc;
-	my $new_pos = pos( $_[0]->{string} );
-
-	# if there are other arguments in method call, they must be
-	# for receiving matches, get matches ($1, $2, ... and assign to @_ ) 
-	for(my $iii=2; $iii<scalar(@_); $iii++)
-		{
-		my $string = '$_['.$iii.'] = $'.($iii-1).';';
-		#print "string is $string\n";
-		eval($string);
-		}
-
-	my $caller_sub = (caller(1))[3];
-	$caller_sub =~ s/^.*:://;
-
-	if($match_success)
-		{
-		if( ($caller_sub eq 'Eat') or ($caller_sub eq 'EatIfSee') )
-			{
-			$_[0]->{pos}->[-1] = $new_pos;
-			}
-		}
-	else
-		{
-		if($caller_sub eq 'Eat')
-			{
-			$_[0]->report_error("expected to eat '".$_[1]."'");
-			}
-		}
-
-	return $match_success;
-}
-
-
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-
-
-sub caller_history
-{
-	my $history;
-	my $i=1;
-	while
-	( 
-		my ($pkg, $file, $line, $subname, $hasargs, $wantarr) =
-		caller($i++)
-	)
-		{
-		$wantarr = 'undef' unless(defined($wantarr));
-		$history .=
-			 "pkg => $pkg, "
-			."file => $file, "
-			."line => $line, "
-			."subname => $subname, "
-			."hasargs => $hasargs, "
-			."wantarr => $wantarr, "
-			."\n";
-		}
-
-	return $history;
-}
-
-
-#############################################################################
-#
-#############################################################################
-sub set_marker	# ( my $lexical_marker )
+sub PutRuleContentsInBoneYard
 #############################################################################
 {
-	confess 'set_marker must be called with a lexical variable'
-		unless(scalar(@_)==2);
+  my ($p,$rule) = @_;
 
-	my $pkg = ref($_[0]);
-	confess ' set_marker() is an object method only' unless($pkg);
-
-	my $default_action = 'reject';
-	$default_action = $_[1] if (defined($_[1]));
-
-	my $marker_name = "marker_".\$_[1];
-
-	$_[0]->{marker_hash}->{$marker_name}=1;
-
-	my %marker_object;
-	$marker_object{action_on_destruct}=$default_action;
-	$marker_object{marker_name}=$marker_name;
-	$marker_object{parser_object} = $_[0];
-
-	tie $_[1], $_[0]->{marker_package}, \%marker_object;
-
-	push(@{$_[0]->{pos}}, $marker_name);
-
-	# make copy of last position and push it on end of position array
-	push(@{$_[0]->{pos}}, $_[0]->{pos}->[-2]);
-
-}
+  while(scalar(@{$rule}))
+    {
+      my $item=pop(@{$rule});
 
 
-
-#############################################################################
-# 
-#############################################################################
-sub __accept_named_marker
-#############################################################################
-{
-	my ($package,$filename) = caller;
-	unless($filename eq __FILE__)
-		{
-		confess "__accept_named_marker is a private method\n";
-		return 0;
-		}
-
-	my $marker_name = $_[1];
-
-	# may have deleted markers out of order 
-	# see if it exists in marker_hash
-	# if not, ignore this request to accept marker
-	unless(exists($_[0]->{marker_hash}->{$marker_name}))
-		{
-		print "marker already deleted $marker_name \n";
-		return ;
-		}
-
-	my $last_pos = pop(@{$_[0]->{pos}});
-	my $pop_name = '';
-	until( $marker_name eq  $pop_name)
-		{ 
-		$pop_name = pop(@{$_[0]->{pos}});
-		if($pop_name =~ /\Amarker_/)
-			{delete($_[0]->{marker_hash}->{$pop_name});}
-		}
-
-	pop(@{$_[0]->{pos}});
-
-	push(@{$_[0]->{pos}}, $last_pos);
-}
-
-
-
-
-#############################################################################
-#
-#############################################################################
-sub __reject_named_marker
-#############################################################################
-{
-	my ($package,$filename) = caller;
-	unless($filename eq __FILE__)
-		{
-		confess "__accept_named_marker is a private method\n";
-		return 0;
-		}
-	my $marker_name = $_[1];
-
-	# may have deleted markers out of order 
-	# see if it exists in marker_hash
-	# if not, ignore this request to reject marker
-	unless(exists($_[0]->{marker_hash}->{$marker_name}))
-		{
-		print "marker already deleted $marker_name \n";
-		return ;
-		}
-
-	my $pop_name = '';
-	until( $marker_name eq  $pop_name)
-		{ 
-		$pop_name = pop(@{$_[0]->{pos}});
-		if($pop_name =~ /\Amarker_/)
-			{delete($_[0]->{marker_hash}->{$pop_name});}
-		}
-
-}
-
-
-
-
-#############################################################################
-#############################################################################
-# want to set a prefix that is local to a rule and all sub-rules.
-# when rule is exited, want prefix to revert to whatever it was previously.
-# i.e. have it tied to a lexical variable
-# push the prefix that the rule wants to enforce,
-# when variable goes out of scope, pop the prefix.
-#############################################################################
-#############################################################################
-sub local_prefix    # ( my $lexically_scoped_var, 'prefix_string' )
-#############################################################################
-{
-	confess 'local_prefix must be called with a lexical variable and '.
-		'a prefix string'
-		unless(scalar(@_)==3);
-
-	my $pkg = ref($_[0]);
-	confess ' local_prefix() is an object method only' unless($pkg);
-
-
-	my $prefix_name = "prefix_".\$_[1];
-
-	$_[0]->{prefix_hash}->{$prefix_name}=1;
-
-	my %prefix_object;
-	$prefix_object{prefix_name} = $prefix_name;
-	$prefix_object{parser_object} = $_[0];
-
-	push(@{$_[0]->{prefix_string}}, $prefix_name);
-	push(@{$_[0]->{prefix_string}}, $_[2]);
-
-	tie $_[1], $_[0]->{prefix_package}, \%prefix_object;
+      if(ref($item) and (ref($item) ne 'Lexical') )
+	{
+	  $p->PutRuleContentsInBoneYard($item);
+	}
+      else
+	{
+	  $p->PutItemInBoneYard( $item );
+	}
+    }
 
 
 }
 
 
-sub __pop_last_prefix
+###############################################################################
+sub TypeIs
+###############################################################################
 {
-	my ($package,$filename) = caller;
-	unless($filename eq __FILE__)
-		{
-		confess "__pop_last_prefix is a private method\n";
-		return 0;
-		}
+  my ($p, $type) = @_;
 
-	my $prefix_name = $_[1];
-	unless(exists($_[0]->{prefix_hash}->{$prefix_name}))
-		{
-		print "prefix already deleted $prefix_name \n";
-		return ;
-		}
+  my $item = $p->GetItem;
 
-	my $pop_name = '';
-	until( $prefix_name eq  $pop_name)
-		{ 
-		$pop_name = pop(@{$_[0]->{prefix_string}});
-		if($pop_name =~ /\Aprefix_/)
-			{delete($_[0]->{prefix_hash}->{$pop_name});}
-		}
+  if($item->[0] eq $type)
+    {
+      $p->PutItemInCurrentRule( $item );
+      return 1;
+    }
+  else
+    {
+      $p->PutItemInBoneYard( $item );
+      $p->RuleFailed("Expected type '$type'");
+      return 0;
+    }
+}
 
+###############################################################################
+sub ValueIs
+###############################################################################
+{
+  my ($p, $value) = @_;
+
+  my $item = $p->GetItem;
+
+  if($item->[1] eq $value)
+    {
+      $p->PutItemInCurrentRule( $item );
+      return 1;
+    }
+  else
+    {
+      $p->PutItemInBoneYard( $item );
+      $p->RuleFailed("Expected value '$value'");
+      return 0;
+    }
 
 }
 
-
-#############################################################################
-sub Eat
-#############################################################################
+###############################################################################
+sub AlternateValues
+###############################################################################
 {
-	Parse::Nibbler::_private_match(@_);
-}
+  my $p = shift(@_);
 
+  my $item = $p->GetItem;
+  my $actual_value =  $item->[1];
 
-#############################################################################
-sub See
-#############################################################################
-{
-	Parse::Nibbler::_private_match(@_);
-}
-
-
-#############################################################################
-sub EatIfSee
-#############################################################################
-{
-	Parse::Nibbler::_private_match(@_);
-}
-
-
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-
-#############################################################################
-# attempt rule and see if it succeeds 
-# eat text if succeed, 
-# restore pointer if fail.
-# return pass or fail
-#############################################################################
-package Parse::Nibbler::Attempt;
-#############################################################################
-
-sub Rule	# ( $object, \&rule, @any_other_arguments)
-{
-	my $rule_ref = splice(@_, 1,1);
-
-	Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-	if (&$rule_ref(@_))
-		{
-		$rule_marker='accept';
-		return 1;
-		}
-	else
-		{
-		$rule_marker='reject';
-		return 0;
-		}
-}
-
-#############################################################################
-# rule is optional, i.e. 
-# 	rule(?)
-# eat text if succeed, 
-# restore pointer if fail.
-# always return SUCCESS.
-#############################################################################
-package Parse::Nibbler::Optional;	
-#############################################################################
-
-sub Rule	# ( $object, \&rule, @any_other_arguments)
-{
-	my $rule_ref = splice(@_, 1,1);
-
-	Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-	if (&$rule_ref(@_))
-		{
-		$rule_marker='accept';
-		return 1;
-		}
-	else
-		{
-		$rule_marker='reject';
-		return 1;
-		}
-}
-
-
-#############################################################################
-# zero or more rules, i.e. 
-# 	rule(*)
-# eat text if succeed, 
-# restore pointer if fail.
-# always return SUCCESS.
-#############################################################################
-package Parse::Nibbler::ZeroOrMore;
-#############################################################################
-
-sub Rule	# ( $object, \&rule, $scalar)
-{
-	my $rule_ref = splice(@_, 1,1);
-
-	$_[1] = [];
-
-	while(1)
-		{
-		Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-		&$rule_ref($_[0], my $result) or return 1;
-		push(@{$_[1]}, $result);
-		$rule_marker = 'accept';
-		}
-}
-
-
-#############################################################################
-# one or more rules, i.e. 
-# 	rule(+)
-# eat text if succeed, 
-# restore pointer if fail.
-# return succeed if at least one rule.
-#############################################################################
-package Parse::Nibbler::OneOrMore;	
-#############################################################################
-
-
-sub Rule	# ( $object, \&rule, $scalar)
-{
-	my $rule_ref = splice(@_, 1,1);
-
-	$_[1] = [];
-
-
-	&$rule_ref($_[0], my $result) or return 0;
-	push(@{$_[1]}, $result);
-	while(1)
-		{
-		Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-		&$rule_ref($_[0], my $result) or return 1;
-		push(@{$_[1]}, $result);
-		$rule_marker = 'accept';
-		}
-}
-
-
-
-#############################################################################
-# one or more items, separated by commas
-# 	rule < , rule >*
-# eat text if succeed, 
-# restore pointer if fail.
-# return succeed if at least one rule.
-#############################################################################
-package Parse::Nibbler::CommaSeparatedList;	
-#############################################################################
-
-
-sub Rule	# ( $object, \&rule, $scalar)
-{
-	my $rule_ref = splice(@_, 1,1);
-
-	$_[1] = [];
-
-	&$rule_ref($_[0], my $result) or return 0;
-	push(@{$_[1]}, $result);
-	while(1)
-		{
-		if(Parse::Nibbler::EatIfSee($_[0], '\,'))
-			{
-			Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-			&$rule_ref($_[0], my $result) or return 0;
-			push(@{$_[1]}, $result);
-			$rule_marker = 'accept';
-			}
-		else
-			{
-			last;
-			}
-		}
+  foreach my $alternate (@_)
+    {
+      if ($alternate eq $actual_value)
+      {
+	$p->PutItemInCurrentRule( $item );
 	return 1;
+      }
+    }
+
+  $p->PutItemInBoneYard( $item );
+  $p->RuleFailed("Expected one of " . join(' | ', @_) . "\n" );
+  return 0;
+
 }
 
 
-
-
-#############################################################################
-# one or more items, separated by commas
-# the items are optional, so you could have rule, rule, , , rule, rule
-# 	rule < , rule? >*
-# eat text if succeed, 
-# restore pointer if fail.
-# return succeed if at least one rule.
-#############################################################################
-package Parse::Nibbler::CommaSeparatedVoidableList;	
-#############################################################################
-
-
-sub Rule	# ( $object, \&rule, $scalar)
+###############################################################################
+sub AlternateRules
+###############################################################################
 {
-	my $rule_ref = splice(@_, 1,1);
+  my $p = shift(@_);
+  my @rules = @_;
 
-	$_[1] = [];
+  foreach my $alternate (@rules)
+    {
+      unless($p->can($alternate))
+	{
+	  $p->FatalError
+	    (
+	     "Can't locate parser rule \"$alternate\" via ".
+	     "package \"".ref($p)."\""
+	    );
+	}
+    }
 
-	my $result;
-	&$rule_ref($_[0], $result) or return 0;
-	push(@{$_[1]}, $result);
-	while(Parse::Nibbler::EatIfSee($_[0], '\,'))
-		{
-		Parse::Nibbler::set_marker( $_[0], my $rule_marker );
-		if(&$rule_ref($_[0], $result))
-			{$rule_marker = 'accept';}
-		push(@{$_[1]}, $result);
-		}
+  foreach my $alternate (@rules)
+    {
+      $@ = '';
+      print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
+      my $arguments = '';
+      if($alternate =~ s/\((.+)\)//)
+	{
+	  $arguments = $1;
+	}
 
-	return 1;
-}
+      my $success=0;
 
+      no strict;
+      $success = $p -> $alternate ( $arguments );
 
+       return 1 if($success);
 
+      # if rule call is NOT wrapped in an eval block
+      # then any exception raised during rule will
+      # automatically escalate to top rule.
+      # dont need to check for special EOF case here.
+      #if( ($@) and ($@ =~ /EOF/) )
+      #{
+      #  $p->RuleFailed($@);
+      #  return 0;
+      #}
 
+    }
 
-
-
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-
-
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-package Parser::Nibbler::Marker;
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-
-#
-# markers are tied to this package to get the appropriate behaviour.
-# marker can be assigned reject or accept string to force action.
-# marker will be rejected when tied scalar goes out of scope.
-#
-
-use Carp;
-use strict;
-use warnings;
-use Data::Dumper;
-
-sub TIESCALAR
-{
-	#print "Creating Marker ".$_[1]->{marker_name}."\n";
-	bless $_[1], $_[0];
-}
-
-
-sub DESTROY 
-{
-	#print "Destroying Marker ".$_[0]->{marker_name}."\n";
-	if ($_[0]->{action_on_destruct} eq 'accept')
-		{
-		Parse::Nibbler::__accept_named_marker
-			(
-			$_[0]->{parser_object},
-			$_[0]->{marker_name}
-			);
-		}
-	else
-		{
-		Parse::Nibbler::__reject_named_marker
-			(
-			$_[0]->{parser_object},
-			$_[0]->{marker_name}
-			);
-		}
-}
-
-sub FETCH
-{
-	my $string = "please do not attempt to read set_marker variable";
-	warn $string;
-	return $string;
-}
-
-sub STORE
-{
-
-	if ($_[1] eq 'accept')
-		{
-		$_[0]->{action_on_destruct}='accept';
-		}
-	elsif($_[1] eq 'reject')
-		{
-		$_[0]->{action_on_destruct}='reject';
-		}
-	else
-		{
-		confess "you can only assign 'accept' or 'reject' to marker"; 
-		}
+  $p->RuleFailed("Expected one of " . join(' | ', @_) . "\n" );
+  return 0;
 
 }
-
-
-1; 
-
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-package Parser::Nibbler::Prefix;
-#############################################################################
-#############################################################################
-#############################################################################
-#############################################################################
-
-#
-# prefixes are tied to this package to get the appropriate behaviour.
-# the prefix is the prefix used in all regular expressions.
-# '\G'. prefix ."user pattern"
-# you can assign a prefix temporarily, and tie it to this package.
-# when tied lexical variable goes out of scope, prefix is reverted to previous.
-#
-
-
-use Carp;
-use strict;
-use warnings;
-use Data::Dumper;
-
-sub TIESCALAR
-{
-	bless $_[1], $_[0];
-
-}
-
-
-sub DESTROY 
-{
-	Parse::Nibbler::__pop_last_prefix
-		( $_[0]->{parser_object}, $_[0]->{prefix_name});
-}
-
-sub FETCH
-{
-	my $string = "please do not attempt to read prefix variable";
-	warn $string;
-	return $string;
-}
-
-sub STORE
-{
-	if(defined( $_[1] ))
-		{
-		confess "you can only assign undef to a prefix"; 
-		return 0;
-		}
-}
-
 
 #############################################################################
 #############################################################################
@@ -1089,83 +600,314 @@ __END__
 
 =head1 NAME
 
-Parse::Nibbler - Parsing HUGE files a little bit at a time.
+Parse::Nibbler - Parse huge files using grammars written in pure perl.
 
 =head1 SYNOPSIS
 
-	package VerilogGrammar;
+{
+package MyGrammar;
+
+use Parse::Nibbler;
+our @ISA = qw( Parse::Nibbler );
 
 
-	my $reg = \&Parse::Nibbler::Register;
 
-	# SourceText := description(*)
-	package SourceText;
+###############################################################################
+Register
+( 'McCoy', sub
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
+  }
+);
 
-	sub Rule
-	{
-		Description::Rule($_[0]);
-	}
 
-	&$reg;  
+###############################################################################
+# DeclareProfession : 
+#    [Dammit,Gadammit] <name> , I'm a doctor not a [Bricklayer,Ditchdigger] !
+###############################################################################
+Register 
+( 'DeclareProfession', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateValues('Dammit', 'Gadammit');
+    $p->Name;
+    $p->ValueIs(",");
+    $p->ValueIs("Ima");
+    $p->ValueIs("doctor");
+    $p->ValueIs("not");
+    $p->ValueIs("a");
+    $p->AlternateValues('Bricklayer', 'Ditchdigger');
+    $p->ValueIs("!");
+  }
+);
+
+###############################################################################
+# MedicalDiagnosis : 
+#    [He's,She's] dead, <name> !
+###############################################################################
+Register 
+( 'MedicalDiagnosis', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateValues("He", "She");
+    $p->ValueIs("is");
+    $p->ValueIs("dead");
+    $p->ValueIs(",");
+    $p->Name;
+    $p->ValueIs("!");
+  }
+);
+
+###############################################################################
+Register 
+( 'Name', sub 
+###############################################################################
+  {
+    my $p = shift;
+    $p->AlternateValues( 'Jim', 'Scotty', 'Spock' );
+
+  }
+);
 
 
-	# put the rest of your rules here....
+} # end package MyGrammar
 
-	package main;
 
-	my $parser = VerilogGrammar->new('short.v');
 
-	SourceText::Rule($parser);
+use Data::Dumper;
+
+###############################################################################
+# call the constructor to create a parser
+###############################################################################
+my $p = MyGrammar->new('transcript.txt');
+
+
+###############################################################################
+# call the top-level rule of the grammar on the parser object
+###############################################################################
+$p->McCoy;
+
+print Dumper $p;
+
 
 
 =head1 DESCRIPTION
 
-This module is a simple, generic parser designed from the beginning
-to parse extremely large files. 
-
-The parser only pulls in a section of the file at a time, (the amount
-pulled in is definable on each parser object.)
-
-The module only has three methods for actual parsing:
-	Eat
-	See
-	EatIfSee
-
-All three methods have the same parameter definition.
-
-The first parameter is a string which is used to create a pattern.
-The pattern is \G . $object->{prefix_string} . $param1;
-This pattern is used to perform a m/$pattern/mgc on the file.
-
-The \G will start the pattern matching where it left off after
-the last regular expression.
-
-The prefix attribute is defaulted to \s* so it will skip all
-leading whitespace in front of whatever pattern you're looking for.
-
-The remaining parameters can be any quantity, but they return 
-any value that would correspond to $1, $2, $3, due to parenthesis
-in your pattern. If you don't want to capture anything, don't
-put parens in your code, and don't pass in extra parameters.
-
-The return value is true if a match is found, false otherwise.
+Create a parser object using the ->new method.
+This method is provided by the Parse::Nibbler module and should not be overridden.
 
 
-See t/VerilogGrammar for a working example of a grammar.
- 
+
+The main functionality of the Parse::Nibbler module is the Register subroutine.
+This subroutine is used to define the rules of your grammar. The Register 
+subroutine takes two parameters: A string and a code reference.
+
+The string is the name of the rule (i.e. the name of the subroutine/method)
+
+The code reference is a reference to the code to execute for this rule.
+
+The Register subroutine will take the code reference, wrap it up in another
+subroutine that acts as a closure, and then installs that code reference 
+as a subroutine with the name matching the given string.
+
+The wrapper code (the closure) is the same for every rule. The wrapper code
+handles quantifiers, calls the rule, and decides what to do based on
+the rule passing or failing. 
+
+
+
+A rule is a code reference with a given string name that have been passed to Register.
+Here is an example of a rule:
+
+
+Register 
+( 'Name', sub 
+  {
+    my $p = shift;
+    $p->AlternateValues( 'Jim', 'Scotty', 'Spock' );
+
+  }
+);
+
+
+The parser object will always be passed in as the first parameter to your rule.
+You must pass this into any further rules or any Parse::Nibbler methods.
+
+In the above example, the rule, "Name" is Registered. "Name" calls one of the 
+builtin methods, AlternateValues, defined below. Once a rule is Registered,
+other rules can call it:
+
+
+Register 
+( 'MedicalDiagnosis', sub 
+  {
+    my $p = shift;
+    $p->AlternateValues("He's", "She's");
+    $p->ValueIs("dead");
+    $p->ValueIs(",");
+    $p->Name;
+    $p->ValueIs("!");
+  }
+);
+
+
+This code registers a rule called "MedicalDiagnosis". It uses some builtin methods,
+but it also calls the rule just registered, "Name".
+
+Once a user defines a rule, they can use it in other rules by simply calling it
+as they would call a method.
+
+Rules registered with the Parse::Nibbler module can be called with quantifiers.
+Quantifiers allow you to specify the quantity of rules present.
+Quantifiers also allow you to specify whether multiple rules have separators.
+
+Quantifiers are specified using the following string format:
+
+     {min:max}
+
+if a single value is specified with no colon, then the number of matches must
+equal the given number exactly.
+
+This indicates that there are exactly three Name rules expected:
+$p->Name('{3}');
+
+This indicates there are 1 to 3 Name rules expected:
+$p->Name('{1:3}');
+
+This indicates there are at least 2 Name rules expected:
+$p->Name('{2:');
+
+
+Separators are specified using the following string format:
+
+     /separator/
+
+This indicates 1 or more Name rules, each separated by a comma:
+
+$p->Name('{1:}/,/');
+
+It is the job of the Register function to make sure this additional
+functionality is provided transparently and automagically to you.
+
+
+
+Additional Parse::Nibbler methods are provided to simplify rule definition and
+to provide smart, automatic error handling, etc. You grammars should only 
+call other rules that you defined, or these methods explained below.
+
+(Note: these methods do not take quantifiers)
+
+----------------
+Method: ValueIs
+----------------
+
+Parameters: One parameter, required. A string containing the expected value.
+
+Example: $p->ValueIs( 'stringvalue' );
+
+Description: 
+
+This method will look at the next lexical and determine if its value matches
+that of the stringvalue given as a parameter. If it does not match, an exception
+is raised and the rule fails.
+
+If the values do match, then the parser stores the lexical, and the rule continues.
+
+
+
+-----------------------
+Method: AlternateValues
+-----------------------
+
+Parameters: A list of string parameters, at least two values. 
+
+Example: $p-AlternateValues( 'value1', 'value2' );
+
+Description:
+
+This method behaves like the ValueIs method, except that it will 
+recieve a list of allowed alternate expected values. The first match
+that succeeds causes the rule to pass and return.
+
+If no match occurs, then an exception is raised and the rule aborts.
+
+If a match does occur, the parser stores the lexical, and the rule continues.
+
+
+
+--------------
+Method: TypeIs
+--------------
+
+Parameters: One parameter, required. A string containing the expected type.
+
+Description: 
+
+This method will look at the next lexical item, and determine if the lexical
+type matches the type given as a parameter.
+
+Valid type values depend on the Lexer that you use, but possible values
+may include "Identifier" and "Number", etc.
+
+Use this in a case where your rule requires an identifier type, for example,
+but it does not care what the name of the identifier is for the rule.
+
+If a match occurs, the parser stores the lexical and the rule continues.
+
+If a match does not occur, an exception is raised, and the rule aborts.
+
+
+----------------------
+Method: AlternateRules
+----------------------
+
+Parameters: A list of string parameters, at least two.
+
+Example: $p->AlternateRules( 'Rule1', 'Rule2' );
+
+Description:
+
+You can describe rule alternation in your rule by calling this method.
+The method takes a list of strings whose string values match the names
+of the valid alternate rule names.
+
+In the above example, the McCoy rule is either a declaration of profession
+or a medical diagnosis. These are two rules that are defined in the same
+package. The AlternateRules method allows you to define multiple rules
+that may be valid at the same point in the text.
+
+If a rule in the parameter list succeeds, the AlternateRule method
+succeeds, and returns immediately.
+
+If no rule succeeds, an exception is thrown, and the rule aborts.
+
+This rule expects either a "DeclareProfession" rule or a 
+"MedicalDiagnosis" rule to be present.
+
+Register
+( 'McCoy', sub
+  {
+    my $p = shift;
+    $p->AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
+  }
+);
 
 
 =head2 EXPORT
 
-None.
+     Register, used to register the rules in your grammar.
 
 
 =head1 AUTHOR
 
 
-# Copyright (c) 2001 Greg London. All rights reserved.
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
+Copyright (c) 2001 Greg London. All rights reserved.
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
 
 contact the author via http://www.greglondon.com
 
