@@ -37,4 +37,10 @@ Revision history for Perl extension Parse::Nibbler.
 			actually works now.
 
 
+1.02	
+
+1.03	Sun Oct 21, 2001
+		- In verilog grammar, add 'Number' rule to list of 
+			alternates that can connect to port.
+		- tried a couple of tweaks to speed up overall code.
 

@@ -17,7 +17,7 @@ our @ISA = qw( Parse::Nibbler );
 use Parse::Nibbler;
 use Data::Dumper;
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 
 #############################################################################
@@ -26,7 +26,7 @@ our $VERSION = '1.02';
 sub Lexer
 #############################################################################
 {
-  my $p = shift;
+  my $p = $_[0];
 
   while(1)
     {
@@ -220,6 +220,29 @@ sub Lexer
     }
 }
 
+
+
+
+
+###############################################################################
+Register 
+( 'Number', sub 
+###############################################################################
+  {
+    $_[0]->TypeIs('Number');
+  }
+);
+
+###############################################################################
+Register 
+( 'Identifier', sub 
+###############################################################################
+  {
+    $_[0]->TypeIs('Identifier');
+  }
+);
+
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
@@ -233,8 +256,7 @@ Register
 ( 'SourceText', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->Description('{*}');
+    $_[0]->Description('{*}');
   }
 );
 
@@ -243,8 +265,7 @@ Register
 ( 'Description', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->ModuleDeclaration;
+    $_[0]->ModuleDeclaration;
   }
 );
 
@@ -253,7 +274,7 @@ Register
 ( 'ModuleDeclaration', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('module');
     $p->TypeIs('Identifier');
     $p->ListOfPorts('{?}');
@@ -268,7 +289,7 @@ Register
 ( 'ListOfPorts', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('(');
     $p->PortList;
     $p->ValueIs(')');
@@ -280,8 +301,7 @@ Register
 ( 'PortList', sub
 ###############################################################################
   {
-    my $p = shift;
-    $p->AlternateRules( 'AnonPortExpressionList', 'NamedPortExpressionList' );
+    $_[0]->AlternateRules( 'AnonPortExpressionList', 'NamedPortExpressionList' );
   }
 );
 
@@ -291,8 +311,7 @@ Register
 ( 'NamedPortExpressionList', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->NamedPortExpression('{+}/,/');
+    $_[0]->NamedPortExpression('{+}/,/');
   }
 );
 
@@ -301,8 +320,7 @@ Register
 ( 'AnonPortExpressionList', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->AnonPortExpression('{+}/,/');
+    $_[0]->AnonPortExpression('{+}/,/');
   }
 );
 
@@ -327,8 +345,10 @@ Register
 ( 'AnonPortExpression', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->AlternateRules( 'PortReference', 'ConcatenatedPortReference' );
+    $_[0]->AlternateRules
+      ( 
+       'PortReference', 'ConcatenatedPortReference', 'Number'  
+      );
   }
 );
 
@@ -337,7 +357,7 @@ Register
 ( 'PortReference', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->TypeIs('Identifier');
     $p->BitSpecifier('{?}');
   }
@@ -350,7 +370,7 @@ Register
 ( 'BitSpecifier', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('[');
     $p->TypeIs('Number');
     $p->ColonNumber('{?}');
@@ -363,7 +383,7 @@ Register
 ( 'ColonNumber', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs(':');
     $p->TypeIs('Number');
   }
@@ -374,7 +394,7 @@ Register
 ( 'ConcatenatedPortReference', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('{');
     $p->PortReference('{+}/,/');
     $p->ValueIs('}');
@@ -386,8 +406,7 @@ Register
 ( 'ModuleItem', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->AlternateRules
+    $_[0]->AlternateRules
       ( 
        'DirectionDeclaration',
        'ModuleInstantiation'
@@ -401,7 +420,7 @@ Register
 ( 'DirectionDeclaration', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->AlternateValues('input', 'output', 'inout');
     $p->Range('{?}');
     $p->PortIdentifier('{+}');
@@ -415,8 +434,7 @@ Register
 ( 'PortIdentifier', sub 
 ###############################################################################
   {
-    my $p = shift;
-    $p->TypeIs('Identifier');
+    $_[0]->TypeIs('Identifier');
   }
 );
 
@@ -425,7 +443,7 @@ Register
 ( 'Range', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('[');
     $p->TypeIs('Number');
     $p->ValueIs(':');
@@ -440,7 +458,7 @@ Register
 ( 'ModuleInstantiation', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->TypeIs('Identifier');
     $p->ParameterValueAssignment('{?}');
     $p->ModuleInstance('{+}/,/');
@@ -453,7 +471,7 @@ Register
 ( 'ParameterValueAssignment', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->ValueIs('#');
     $p->ValueIs('(');
     $p->PortList('{?}');
@@ -467,7 +485,7 @@ Register
 ( 'ModuleInstance', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
     $p->PortList('{?}');

@@ -11,7 +11,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 
 use Carp;
@@ -56,8 +56,8 @@ sub Register
   *{$pkg_rule} = 
     sub 
       {
-	my $p = shift(@_);
-	my $rule_quantifier = shift(@_);
+	my $p = $_[0];
+	my $rule_quantifier = $_[1];
 
 	my ($min, $max, $separator);
 
@@ -158,7 +158,7 @@ sub Register
 	  {
 	    eval
 	      {
-		&$coderef($p, @_);
+		&$coderef($p);
 		$rules_found++;
 	      };
 
@@ -271,8 +271,8 @@ sub Register
 sub new	
 #############################################################################
 {
-	my $pkg = shift;
-	my $filename = shift;
+	my $pkg = $_[0];
+	my $filename = $_[1];
 
 	open(my $handle, $filename) or confess "Error opening $filename \n";
 
@@ -312,7 +312,7 @@ sub new
 sub Lexer
 #############################################################################
 {
-  my $p = shift;
+  my $p = $_[0];
 
   while(1)
     {
@@ -398,7 +398,7 @@ sub ThrowRule
 sub DieOnFatalError
 ###############################################################################
 {
-    my ($p) = @_;
+    my $p = $_[0];
 
     return unless($@);
     my $error = $@;
@@ -413,7 +413,7 @@ sub DieOnFatalError
 sub GetItem
 ###############################################################################
 {
-  my ($p) = @_;
+  my $p = $_[0];
 
   my $item;
   if(
@@ -567,8 +567,7 @@ sub AlternateRules
   my $p = shift(@_);
   my @rules = @_;
 
-  my $alternate;
-  foreach $alternate (@rules)
+  foreach my $alternate (@rules)
     {
       $@ = '';
       print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
@@ -620,7 +619,7 @@ Register
 ( 'McCoy', sub
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
   }
 );
@@ -634,7 +633,7 @@ Register
 ( 'DeclareProfession', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->AlternateValues('Dammit', 'Gadammit');
     $p->Name;
     $p->ValueIs(",");
@@ -655,7 +654,7 @@ Register
 ( 'MedicalDiagnosis', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->AlternateValues("He", "She");
     $p->ValueIs("is");
     $p->ValueIs("dead");
@@ -670,7 +669,7 @@ Register
 ( 'Name', sub 
 ###############################################################################
   {
-    my $p = shift;
+    my $p = $_[0];
     $p->AlternateValues( 'Jim', 'Scotty', 'Spock' );
 
   }
@@ -701,7 +700,8 @@ print Dumper $p;
 =head1 DESCRIPTION
 
 Create a parser object using the ->new method.
-This method is provided by the Parse::Nibbler module and should not be overridden.
+This method is provided by the Parse::Nibbler module and should not be 
+overridden.
 
 
 
@@ -723,8 +723,8 @@ the rule passing or failing.
 
 
 
-A rule is a code reference with a given string name that have been passed to Register.
-Here is an example of a rule:
+A rule is a code reference with a given string name that have been passed to 
+Register. Here is an example of a rule:
 
 
 Register 
@@ -758,8 +758,8 @@ Register
 );
 
 
-This code registers a rule called "MedicalDiagnosis". It uses some builtin methods,
-but it also calls the rule just registered, "Name".
+This code registers a rule called "MedicalDiagnosis". It uses some builtin 
+methods, but it also calls the rule just registered, "Name".
 
 Once a user defines a rule, they can use it in other rules by simply calling it
 as they would call a method.
@@ -828,10 +828,11 @@ Example: $p->ValueIs( 'stringvalue' );
 Description: 
 
 This method will look at the next lexical and determine if its value matches
-that of the stringvalue given as a parameter. If it does not match, an exception
-is raised and the rule fails.
+that of the stringvalue given as a parameter. If it does not match, an 
+exception is raised and the rule fails.
 
-If the values do match, then the parser stores the lexical, and the rule continues.
+If the values do match, then the parser stores the lexical, and the rule
+continues.
 
 
 
