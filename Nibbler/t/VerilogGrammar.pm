@@ -43,7 +43,12 @@ sub Lexer
 	  $p->{line_number} ++;
 	  my $fh = $p->{handle};
 	  $p->{current_line} = <$fh>;
-	  $p->FlagEndOfFile unless(defined($p->{current_line}));
+
+	  unless(defined($p->{current_line}))
+	    {
+	      return bless [ '!EOF!', '!EOF!', $line, $col ], 'Lexical';
+	    }
+
 	  chomp($p->{current_line});
 	  pos($p->{current_line}) = 0;
 	  redo;
@@ -229,7 +234,7 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->Description('{0:}');
+    $p->Description('{*}');
   }
 );
 
@@ -251,9 +256,9 @@ Register
     my $p = shift;
     $p->ValueIs('module');
     $p->TypeIs('Identifier');
-    $p->ListOfPorts('{0:1}');
+    $p->ListOfPorts('{?}');
     $p->ValueIs(';');
-    $p->ModuleItem('{0:}');
+    $p->ModuleItem('{*}');
     $p->ValueIs('endmodule');
   }
 );
@@ -287,7 +292,7 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->NamedPortExpression('{1:}/,/');
+    $p->NamedPortExpression('{+}/,/');
   }
 );
 
@@ -297,7 +302,7 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AnonPortExpression('{1:}/,/');
+    $p->AnonPortExpression('{+}/,/');
   }
 );
 
@@ -311,7 +316,7 @@ Register
     $p->ValueIs('.');
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->PortExpression('{0:1}');
+    $p->AnonPortExpression('{?}');
     $p->ValueIs(')');
   }
 );
@@ -382,7 +387,7 @@ Register
   {
     my $p = shift;
     $p->ValueIs('{');
-    $p->PortReference('{1:} /,/');
+    $p->PortReference('{+} /,/');
     $p->ValueIs('}');
   }
 );
@@ -409,8 +414,8 @@ Register
   {
     my $p = shift;
     $p->AlternateValues('input', 'output', 'inout');
-    $p->Range('{0:1}');
-    $p->PortIdentifier('{1:}');
+    $p->Range('{?}');
+    $p->PortIdentifier('{+}');
     $p->ValueIs(';');
   }
 );
@@ -448,8 +453,8 @@ Register
   {
     my $p = shift;
     $p->TypeIs('Identifier');
-    $p->ParameterValueAssignment('{0:1}');
-    $p->ModuleInstance('{1:}/,/');
+    $p->ParameterValueAssignment('{?}');
+    $p->ModuleInstance('{+}/,/');
     $p->ValueIs(';');
   }
 );
@@ -462,7 +467,7 @@ Register
     my $p = shift;
     $p->ValueIs('#');
     $p->ValueIs('(');
-    $p->PortList('{0:1}');
+    $p->PortList('{?}');
     $p->ValueIs(')');
 
   }
@@ -476,7 +481,7 @@ Register
     my $p = shift;
     $p->TypeIs('Identifier');
     $p->ValueIs('(');
-    $p->PortList('{0:1}');
+    $p->PortList('{?}');
     $p->ValueIs(')');
 
   }
@@ -502,7 +507,7 @@ VerilogGrammar - Parsing HUGE gate level verilog files a little bit at a time.
 
 	use VerilogGrammar;
 	my $p = VerilogGrammar->new('filename.v');
-	$p->design_items;
+	$p->SourceText;
 
 =head1 DESCRIPTION
 

@@ -10,14 +10,14 @@ Revision history for Perl extension Parse::Nibbler.
 			and added a link in t/ directory
 		- added copyright/license to README file.
 
-0.22	Tue Aug 28
+0.22	Tue Aug 28 2001
 		- added link to VerilogGrammar.pm in top directory.
 
-0.23	Tue Aug 28
+0.23	Tue Aug 28 2001
 		- put use base module name in quotes, in VerilogGrammar.pm
 
 
-1.00	Tue Oct 15
+1.00	Tue Oct 15 2001
 		- Major rewrite
 		- interface is much easier to use.
 		- do not require a separate package for each rule.
@@ -25,3 +25,16 @@ Revision history for Perl extension Parse::Nibbler.
 		- added a lexer which gets rid of a window of text.
 		- now lex the file once, and then process lexicals after that.
 		- Still in alpha stages
+
+1.01	Thu Oct 18 2001
+		- stripped out all references to End Of File error checks.
+		- want to eventually rewrite EOF handling.
+		- error messages are now tagged so that they can be
+			distinguished from normal Perl errors.
+		- handle new quantifiers {?} {+} {*}
+		- improve VerilogGrammar.pm.
+		- fix bug in Parse::Nibbler so that AlternateRules
+			actually works now.
+
+
+

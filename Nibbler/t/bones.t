@@ -1,3 +1,4 @@
+#!/usr/bin/perl -ws
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl test.pl'
 
@@ -48,14 +49,14 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateItems('Dammit', 'Gadammit');
+    $p->AlternateValues('Dammit', 'Gadammit');
     $p->Name;
     $p->ValueIs(",");
     $p->ValueIs("Ima");
     $p->ValueIs("doctor");
     $p->ValueIs("not");
     $p->ValueIs("a");
-    $p->AlternateItems('Bricklayer', 'Ditchdigger');
+    $p->AlternateValues('Bricklayer', 'Ditchdigger');
     $p->ValueIs("!");
   }
 );
@@ -69,7 +70,7 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateItems("He's", "She's");
+    $p->AlternateValues("He's", "She's");
     $p->ValueIs("dead");
     $p->ValueIs(",");
     $p->Name;
@@ -83,7 +84,7 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateItems( 'Jim', 'Scotty', 'Spock' );
+    $p->AlternateValues( 'Jim', 'Scotty', 'Spock' );
 
   }
 );

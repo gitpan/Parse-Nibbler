@@ -22,12 +22,14 @@ make test
 make install
 
 
-After you've done the install, you can cd into the t/ subdirectory
-and take a look at the test examples.
+After you've done the install, you can cd into the 
+t/ subdirectory and take a look at the test examples.
 
-The main documentation is POD at the end of the Parse::Nibbler.pm file itself.
+The main documentation is POD at the end of the 
+Parse::Nibbler.pm file itself.
 
 
 Current state of package: Alpha
 
-Any of the interfaces to the package may change at the next version.
+Any of the interfaces to the package may change at 
+the next version.

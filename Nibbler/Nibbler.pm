@@ -11,7 +11,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 
 use Carp;
@@ -31,6 +31,14 @@ our @ISA = qw( Exporter );
 
 our @EXPORT = qw( Register );
 
+###############################################################################
+# Register is an exported subroutine.
+# It takes a string ($rulename) and a subroutine reference ($coderef)
+# as its input parameters.
+# Register determines the current package from where it is called,
+# and installs a subroutine with the name $rulename in that package.
+# The subroutine executes code that contains a wrapper around the coderef given.
+# Register is a class method.
 ###############################################################################
 sub Register
 ###############################################################################
@@ -55,31 +63,56 @@ sub Register
 
 	my ($min, $max, $separator);
 
-	# quantity is specified via {min:max} syntax
-	if( $rule_quantifier =~ s/(\{.+\})// )
+	# quantity is specified via {xxx} syntax
+	if( $rule_quantifier =~ s/\{(.+)\}// )
 	  {
 	    my $qty=$1;
 	    $qty =~ s/\s//g;
 	
+	    # {?} means 0 or 1,
+	    if ( $qty eq '?' )
+	      {
+		$min = 0;
+		$max = 1;
+	      }
+
+	    # {+} means 1 or more,
+	    elsif ( $qty eq '+' )
+	      {
+		$min = 1;
+	      }
+
+	    # {*} means 0 or more,
+	    elsif ( $qty eq '*' )
+	      {
+		$min = 0;
+	      }
+
 	    # {3} means exactly 3
-	    if( $qty =~ /\{(\d+)\}/ )
+	    elsif( $qty =~ /^(\d+)$/ )
 	      {
 		$min = $1;
 		$max = $min;
 	      }
 
 	    # {3:} means 3 or more
-	    elsif ( $qty =~ /\{(\d+)\:\}/ )
+	    elsif ( $qty =~ /^(\d+)\:$/ )
 	      {
 		$min = $1;
 	      }
 
 	    # {3:5} means 3 to 5, inclusive
-	    elsif ( $qty =~ /\{(\d+)\:(\d+)\}/ )
+	    elsif ( $qty =~ /^(\d+)\:(\d+)$/ )
 	      {
 		$min = $1;
-		$max = $2
+		$max = $2;
 	      }
+
+	    else
+	      {
+		$p->FatalError("$pkg_rule called with unknown quantifier {$qty}");
+	      }
+
 	  }
 	else
 	  {
@@ -96,11 +129,11 @@ sub Register
 	    $separator = $1;
 	    if($separator =~ /\s/)
 	      {
-		die ("separator /$separator/ cannot contain whitespace");
+		$p->FatalError ("separator /$separator/ cannot contain whitespace");
 	      }
 	    if(length($separator) == 0)
 	      {
-		die ("separator of length zero is not supported");
+		$p->FatalError ("separator of length zero is not supported");
 	      }
 	  }
 
@@ -110,7 +143,8 @@ sub Register
 	$rule_quantifier =~ s/\s//g;
 	if($rule_quantifier)
 	  {
-	    die("'$pkg_rule' called with unknown quantifier $rule_quantifier");
+	    $p->FatalError
+	      ("'$pkg_rule' called with unknown quantifier $rule_quantifier");
 	    # should probably use caller() to print out who called this rule
 	    # what file, what line number, etc.
 	  }
@@ -146,8 +180,10 @@ sub Register
 		$rule_succeeded=&$coderef($p, @_);
 	      };
 
+
 	    if($@)
 	      {
+		$p->DieOnFatalError;
 		$eval_error = $@;
 		last;
 	      }
@@ -167,26 +203,27 @@ sub Register
 		    $p->ValueIs($separator);
 		  };
 
-		if($@)
-		  {
-		    $eval_error = $@ if $p->ErrorIsEndOfFile;
-		  }
+		$p->DieOnFatalError if ($@);
 	      }
 	  }
 
 	print "BBB rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
-	#check to see if we met the minimum requirement
-	# if we did, any eval errors (except EOF) can be ignored
-	if($rules_found>=$min)
+	if( $rules_found >= $min )
 	  {
-	    $eval_error = '' unless( $p->ErrorIsEndOfFile );
+	    $eval_error = '';
 	  }
 
-	elsif(!($eval_error))
+	elsif(length($eval_error)==0)
 	  {
-	    $eval_error =  "not enough rules ($pkg_rule) for quantifiers";
+	    eval
+	      {
+		$p->ThrowRule("not enough rules ($pkg_rule) for quantifiers");
+	      };
+
+	    $eval_error = $@ ;
 	  }
+
 	print "CCC rule: $pkg_rule,  eval is $eval_error \n" if ($main::DEBUG);
 
 
@@ -199,13 +236,7 @@ sub Register
 	# check to see if this rule passed or failed.
 	my $ret;
 
-	if ( 
-	    (
-	     (!($rule_completed)) 
-	     and  
-	     (($eval_error) and ($eval_error!~/EOF/))
-	    )
-	   )
+	if ( (!($rule_completed)) and ($eval_error))
 	  {
 	    # if failed, pop the current rule out of the end of the previous rule.
 	    $p->PutRuleContentsInBoneYard($this_rule_results);
@@ -248,7 +279,7 @@ sub Register
 	  }
 	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
-	$p->FlagEndOfFile if ( defined($eval_error) and ($eval_error =~ /EOF/) ) ;
+	$p->ThrowRule($eval_error) if ( defined($eval_error) and ($eval_error) );
 	return $ret;
       }
 
@@ -257,7 +288,11 @@ sub Register
 
 #############################################################################
 #############################################################################
-# create a new parser with:  my $obj = P->new;
+# create a new parser with:  my $obj = Pkg->new($filename);
+# Where 'Pkg' is a package that defines the grammar you wish to use
+# to parse the text in question.
+# The constructor must be given a filename to start parsing.
+# new is a class method.
 #############################################################################
 #############################################################################
 sub new	
@@ -280,6 +315,16 @@ sub new
 	bless $obj, $pkg;
 
 }
+
+#############################################################################
+#############################################################################
+#############################################################################
+# The rest of the methods in this file are object level methods.
+# The object being operated upon is a parser created with the constructor above.
+#############################################################################
+#############################################################################
+#############################################################################
+
 
 #############################################################################
 # Lexer
@@ -356,7 +401,7 @@ sub FatalError
   my ($p,$msg) = @_;
   eval
     {
-      $p->RuleFailed($msg);
+      $p->ThrowRule($msg);
     };
   print $@;
   exit;
@@ -364,33 +409,28 @@ sub FatalError
 
 
 ###############################################################################
-sub RuleFailed
+sub ThrowRule
 ###############################################################################
 {
     my ($p,$msg) = @_;
-
-    die ($msg . "\n" );
+    $msg =~ s/!!Parse::Nibbler::ThrowRule!!//;
+    die ("!!Parse::Nibbler::ThrowRule!!" . $msg . "\n" );
 }
 
-
 ###############################################################################
-sub FlagEndOfFile
+sub DieOnFatalError
 ###############################################################################
 {
-  my ($p) = @_;
-  die ("EOF MATES\n" );
+    my ($p) = @_;
+
+    return unless($@);
+    my $error = $@;
+    unless($error =~ s/!!Parse::Nibbler::ThrowRule!!//)
+      {
+	$p->FatalError($error);
+      }
 }
 
-###############################################################################
-sub ErrorIsEndOfFile
-###############################################################################
-{
-  my ($p) = @_;
-  if ( defined($@) and ($@=~/EOF/) )
-    {return 1;}
-  else
-    {return 0;}
-}
 
 ###############################################################################
 sub GetItem
@@ -411,8 +451,6 @@ sub GetItem
     {
       $item = $p->Lexer;
     }
-
-  $p->FlagEndOfFile unless(defined($item));
 
   return $item;
 }
@@ -470,6 +508,19 @@ sub PutRuleContentsInBoneYard
 
 
 ###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+# The following methods are object methods,
+# intended to be called within your grammars.
+# Use these methods to define the contents of your grammars.
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+
+###############################################################################
 sub TypeIs
 ###############################################################################
 {
@@ -485,7 +536,7 @@ sub TypeIs
   else
     {
       $p->PutItemInBoneYard( $item );
-      $p->RuleFailed("Expected type '$type'");
+      $p->ThrowRule("Expected type '$type'");
       return 0;
     }
 }
@@ -506,7 +557,7 @@ sub ValueIs
   else
     {
       $p->PutItemInBoneYard( $item );
-      $p->RuleFailed("Expected value '$value'");
+      $p->ThrowRule("Expected value '$value'");
       return 0;
     }
 
@@ -531,7 +582,7 @@ sub AlternateValues
     }
 
   $p->PutItemInBoneYard( $item );
-  $p->RuleFailed("Expected one of " . join(' | ', @_) . "\n" );
+  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
 
 }
@@ -544,19 +595,8 @@ sub AlternateRules
   my $p = shift(@_);
   my @rules = @_;
 
-  foreach my $alternate (@rules)
-    {
-      unless($p->can($alternate))
-	{
-	  $p->FatalError
-	    (
-	     "Can't locate parser rule \"$alternate\" via ".
-	     "package \"".ref($p)."\""
-	    );
-	}
-    }
-
-  foreach my $alternate (@rules)
+  my $alternate;
+  foreach $alternate (@rules)
     {
       $@ = '';
       print "\ntrying rule alternate $alternate \n" if ($main::DEBUG);
@@ -568,24 +608,20 @@ sub AlternateRules
 
       my $success=0;
 
-      no strict;
-      $success = $p -> $alternate ( $arguments );
+      eval
+	{
+	  no strict;
+	  $success = $p -> $alternate ( $arguments );
+	};
 
-       return 1 if($success);
+      $p->DieOnFatalError;
 
-      # if rule call is NOT wrapped in an eval block
-      # then any exception raised during rule will
-      # automatically escalate to top rule.
-      # dont need to check for special EOF case here.
-      #if( ($@) and ($@ =~ /EOF/) )
-      #{
-      #  $p->RuleFailed($@);
-      #  return 0;
-      #}
+      #return 1 if($success);
+      return 1 if(!($@));
 
     }
 
-  $p->RuleFailed("Expected one of " . join(' | ', @_) . "\n" );
+  $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
 
 }
@@ -762,15 +798,25 @@ Once a user defines a rule, they can use it in other rules by simply calling it
 as they would call a method.
 
 Rules registered with the Parse::Nibbler module can be called with quantifiers.
+Quantifiers are passed into the Rule when you call it in your grammar
+by passing in a string that matches the format described here.
+
 Quantifiers allow you to specify the quantity of rules present.
 Quantifiers also allow you to specify whether multiple rules have separators.
 
 Quantifiers are specified using the following string format:
 
-     {min:max}
+     {quantifier}
 
-if a single value is specified with no colon, then the number of matches must
-equal the given number exactly.
+
+This indicates that there are zero or one Name rules expected:
+$p->Name('{?}');
+
+This indicates that there are zero or more Name rules expected:
+$p->Name('{*}');
+
+This indicates that there are one or more Name rules expected:
+$p->Name('{+}');
 
 This indicates that there are exactly three Name rules expected:
 $p->Name('{3}');
@@ -801,9 +847,9 @@ call other rules that you defined, or these methods explained below.
 
 (Note: these methods do not take quantifiers)
 
-----------------
+###############
 Method: ValueIs
-----------------
+###############
 
 Parameters: One parameter, required. A string containing the expected value.
 
@@ -819,9 +865,9 @@ If the values do match, then the parser stores the lexical, and the rule continu
 
 
 
------------------------
+#######################
 Method: AlternateValues
------------------------
+#######################
 
 Parameters: A list of string parameters, at least two values. 
 
@@ -839,9 +885,9 @@ If a match does occur, the parser stores the lexical, and the rule continues.
 
 
 
---------------
+##############
 Method: TypeIs
---------------
+##############
 
 Parameters: One parameter, required. A string containing the expected type.
 
@@ -861,9 +907,9 @@ If a match occurs, the parser stores the lexical and the rule continues.
 If a match does not occur, an exception is raised, and the rule aborts.
 
 
-----------------------
+######################
 Method: AlternateRules
-----------------------
+######################
 
 Parameters: A list of string parameters, at least two.
 
@@ -895,6 +941,15 @@ Register
     $p->AlternateRules( 'DeclareProfession', 'MedicalDiagnosis' );
   }
 );
+
+
+You can specify quantifiers as part of the alternate rule strings.
+
+    $p->AlternateRules( 'DeclareProfession({+})', 'MedicalDiagnosis' );
+
+The above example indicates that you can have one or more 
+DeclareProfession rules OR ALTERNATELY you can have exactly
+one MedicalDiagnosis rule.
 
 
 =head2 EXPORT
