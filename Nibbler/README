@@ -1,6 +1,24 @@
-# Copyright (c) 2001 Greg London. All rights reserved.
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
+
+
+Parse::Nibbler - Parse huge files using grammars written in pure perl.
+Copyright (C) 2001  Greg London
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+contact the author via http://www.greglondon.com
+
 
 Parse::Nibbler is a  parser that allows you to write grammars in pure perl.
 
@@ -34,7 +52,7 @@ The test t/big_verilog.t runs a benchmarking test which
 times how long it takes to parse a large piece of verilog
 gate level code. 6000 lines of verilog in test file. 
 
-It currently benchmarks at about 1025 lines per second.
+It currently benchmarks at about 1140 lines per second.
 (on a Pentium 3 @ 750 Mhz)
 
 Current state of package: Alpha

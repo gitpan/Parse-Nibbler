@@ -70,3 +70,8 @@ Revision history for Perl extension Parse::Nibbler.
 		-	(rule, rule_args, rule_save, rule_save_args)
 		-	was getting a minor speed saving (~5%)
 		-	But code maintenance was a nightmare.
+
+
+1.08	Thur Nov 8 2001
+		- rewrote lexer in verilog grammar for speed improvement.
+		- now parsing ~1140 lines per second.

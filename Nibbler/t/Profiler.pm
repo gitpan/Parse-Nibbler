@@ -1,5 +1,27 @@
 package Profiler;
 
+
+=for
+
+    Profiler - Automatically profile subroutine calls in a perl program.
+    Copyright (C) 2001  Greg London
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+=cut
+
 use strict;
 use Data::Dumper;
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
@@ -381,3 +403,57 @@ sub END
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+    Profiler - Automatically profile subroutine calls in a perl program.
+
+=head1 SYNOPSIS
+
+    use Profiler;
+
+
+=head1 DESCRIPTION
+
+  The profiler module is completely automatic in its basic mode.
+  You simply "use" the module at the top of you main script.
+  The module will then automatically instrument all subroutines
+  in the code, profile each subroutine call during the execution
+  of the script, and print out a report of usage.
+
+
+=head2 EXPORT
+
+  Every subroutine that exists at "INIT" time will be redefined
+  to call an instrumented version of the subroutine.
+
+
+=head1 AUTHOR
+
+
+    Profiler - Automatically profile subroutine calls in a perl program.
+    Copyright (C) 2001  Greg London
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+    contact the author via http://www.greglondon.com
+
+
+=head1 SEE ALSO
+
+
+=cut

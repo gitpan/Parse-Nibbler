@@ -1,8 +1,26 @@
 package VerilogGrammar;
 
-# Copyright (c) 2001 Greg London. All rights reserved.
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
+=for
+
+    VerilogGrammar - Parsing HUGE gate level verilog files a little bit at a time.
+    Copyright (C) 2001  Greg London
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+=cut
+
 
 ## See POD after __END__
 
@@ -19,8 +37,7 @@ use Data::Dumper;
 
 use Parse::Nibbler;
 
-our $VERSION = '1.07';
-
+our $VERSION = '1.08';
 
 
 
@@ -59,173 +76,58 @@ sub Lexer
 	  redo;
 	}
 
-      # delete any leading whitespace and check it again
-      if($p->[Parse::Nibbler::current_line] =~ /\G\s+/gc)
+      # look for leading whitespace and possible comment to end of line
+      if($p->[Parse::Nibbler::current_line] =~ /\G\s+(?:\/\/.*)?/gco)
 	{
 	  redo;
 	}
 
-      # look for comment to end of line
-      if($p->[Parse::Nibbler::current_line] =~ /\G\/\/.*/gc)
+
+      # look for possible identifiers
+      if($p->[Parse::Nibbler::current_line] =~ 
+	 /\G(
+	       \$?[a-zA-Z_][a-zA-Z0-9_\$]*(?:\.[a-zA-Z_][a-zA-Z0-9_\$]*)*
+	     | \$?(?:\\[^\s]+)\s
+	    )
+	 /gcxo
+	)
 	{
-	  redo;
+	  return bless ['Identifier', $1, $line, $col], 'Lexical';
 	}
 
-      # look for identifier (hierarchical)
-      my $identifier = '';
-      if( $p->[Parse::Nibbler::current_line] =~ /\G\$/gc )
-	{
-	  $identifier = "\$";   # system task name
-	}
-
-      while(1)
-	{
-	  if ( $p->[Parse::Nibbler::current_line] =~ /\G([a-zA-Z_][a-zA-Z0-9_\$]*)/gc )
-	    {$identifier .= $1;}
-
-	  elsif($p->[Parse::Nibbler::current_line] =~ /\G(\\[^\s]+)\s/gc) 
-	    {
-	      $identifier .= $1;
-	      pos($p->[Parse::Nibbler::current_line]) = pos($p->[Parse::Nibbler::current_line]) - 1; 
-	    }
-
-	  # no match and no accumulated identifier string
-	  elsif (length($identifier) == 0)
-	    { last; } 
-
-	  $p->report_error("bad identifier") if ($identifier =~ /\.$/);
-
-	  if ($p->[Parse::Nibbler::current_line] =~ /\G\./gc)
-	    {
-	      $identifier .= '.';
-	      redo;
-	    }
-
-	  if ($identifier =~ /\A\$/)
-	    {
-	      if(length($identifier) == 1)
-		{
-		  return bless  ['$', '$', $line, $col ], 'Lexical';
-		}
-	      else
-		{
-		  return bless 
-		    ['system_task_name', $identifier, $line, $col ], 'Lexical';
-		}
-
-	    }
-
-	  else
-	    {
-	      return bless ['Identifier', $identifier, $line, $col ], 'Lexical';
-	    }
-
-	}
 
       # look for a 'Number' in Verilog style of number
-      # [+-] unsigned_number 
-      # [+-] [unsigned_number] 'd unsigned_number
-      # [+-] [unsigned_number] 'o octal_number
-      # [+-] [unsigned_number] 'b binary_number
-      # [+-] [unsigned_number] 'h hex_number
-      # [+-] unsigned_number . unsigned_number
-      # [+-] unsigned_number [ . unsigned_number ] e [+-] unsigned_number
+      #  [unsigned_number] 'd unsigned_number
+      #  [unsigned_number] 'o octal_number
+      #  [unsigned_number] 'b binary_number
+      #  [unsigned_number] 'h hex_number
+      #   unsigned_number [ . unsigned_number ] [ e [+-] unsigned_number ]
+      if($p->[Parse::Nibbler::current_line] =~ 
+	 /\G(
+	       (?:\d+)?\'
+	          (?:
+		     [dD][0-9xXzZ]+
+		   | [oO][0-7xXzZ]+
+		   | [bB][01xXzZ]+
+		   | [hH][0-9a-fA-FxXzZ]
+		  )
 
-      # first character must be a number or a '
-      my $number = '';
-
-      # will ignore optional sign at beginning of number for now.
-      # will hope that parser can handle it in rules.
-
-      if ($p->[Parse::Nibbler::current_line] =~ /\G([0-9][0-9_]*)/gc)
+	     | \d+(?:\.\d+)?(?:e[+-]?\d+)?
+	    )
+	 /gcxo
+	)
 	{
-	  $number .= $1;
+	  return bless ['Number', $1, $line, $col ], 'Lexical';
 	}
-
-      if ( $p->[Parse::Nibbler::current_line] =~ /\G(\'[dDoObBhH])/gc )
-	{
-	  $number .= $1;
-	  $number = lc($number);
-
-	  # if no number was given to indicate size, default is 32
-	  unless($number =~ /\A[0-9]/)
-	    {
-	      $number = '32' . $number;
-	    }
-
-	  if($number=~/d$/)
-	    {
-	      $p->[Parse::Nibbler::current_line] =~ /\G([0-9][0-9_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid decimal number") 
-		}
-	      $number .= $1;
-	    }
-	  elsif($number=~/o$/)
-	    {
-	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ0-7][xXzZ0-7_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid octal number") 
-		}
-	      $number .= $1;
-	    }
-	  elsif($number=~/b$/)
-	    {
-	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ01][xXzZ01_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid binary number") 
-		}	      $number .= $1;
-	    }
-
-	  elsif($number=~/h$/)
-	    {
-	      $p->[Parse::Nibbler::current_line] =~ /\G([xXzZ0-9a-fA-F][xXzZ0-9a-fA-F_]*)/gc;
-	      unless(defined($1))
-		{
-		  $p->report_error("Lex error: invalid hexadecimal number") 
-		}	      $number .= $1;
-	    }
-	  
-	  if($number =~ /_$/)
-	    {
-	      report_error("Lex: number ended with '_'");
-	    }
-
-	  $number = lc($number);
-	  $number =~ s/_//g;
-	  $number =~ s/\s//g;
-	  return bless ['Number', $number, $line, $col ], 'Lexical';
-	}
-      else  # not a based number ('h), is it a float with exponent
-	{
-	  if( $p->[Parse::Nibbler::current_line] =~ /\G(\.[0-9][0-9_]*)/gc )
-	    {
-	      $number .= $1;
-	    }
-
-	  if( $p->[Parse::Nibbler::current_line] =~ /\G(\s*[eE]\s*[+-]*\s*[0-9][0-9_]*)/gc )
-	    {
-	      $number .= $1;
-	    }
-
-	  if(length($number)>0)
-	    {
-	      $number = lc($number);
-	      $number =~ s/\s//g;
-	      $number =~ s/_//g;
-	      return bless ['Number', $number, $line, $col ], 'Lexical';
-	    }
-	  }
 
       # else get a single character and return it.
-      $p->[Parse::Nibbler::current_line] =~ /\G(.)/gc;
+      $p->[Parse::Nibbler::current_line] =~ /\G(.)/gco;
       return bless [$1, $1, $line, $col ], 'Lexical';
 
     }
 }
+
+
 
 
 
@@ -448,7 +350,7 @@ Register
 ###############################################################################
   {
     my $p = $_[0];
-    if ($p->PeekValue =~ /input|output|inout/)
+    if ($p->PeekValue =~ /input|output|inout/o)
       {
 	$p->DirectionDeclaration;
       }
@@ -574,12 +476,24 @@ None.
 
 =head1 AUTHOR
 
+    VerilogGrammar - Parsing HUGE gate level verilog files a little bit at a time.
+    Copyright (C) 2001  Greg London
 
-# Copyright (c) 2001 Greg London. All rights reserved.
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
 
-contact the author via http://www.greglondon.com
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+    contact the author via http://www.greglondon.com
 
 
 =head1 SEE ALSO
