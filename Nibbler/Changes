@@ -9,3 +9,6 @@ Revision history for Perl extension Parse::Nibbler.
 		- fixed make test, added a use lib statement
 			and added a link in t/ directory
 		- added copyright/license to README file.
+
+0.22	Tue Aug 28
+		- added link to VerilogGrammar.pm in top directory.
