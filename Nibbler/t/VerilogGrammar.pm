@@ -17,7 +17,7 @@ our @ISA = qw( Parse::Nibbler );
 use Parse::Nibbler;
 use Data::Dumper;
 
-our $VERSION = '1.00';
+our $VERSION = '1.02';
 
 
 #############################################################################
@@ -338,45 +338,34 @@ Register
 ###############################################################################
   {
     my $p = shift;
-    $p->AlternateRules( 'PortIdBus','PortIdOneBit', 'PortIdNoBit' );
+    $p->TypeIs('Identifier');
+    $p->BitSpecifier('{?}');
   }
 );
 
-###############################################################################
-Register 
-( 'PortIdNoBit', sub 
-###############################################################################
-  {
-    my $p = shift;
-    $p->TypeIs('Identifier');
-  }
-);
+
 
 ###############################################################################
 Register 
-( 'PortIdOneBit', sub 
+( 'BitSpecifier', sub 
 ###############################################################################
   {
     my $p = shift;
-    $p->TypeIs('Identifier');
     $p->ValueIs('[');
     $p->TypeIs('Number');
+    $p->ColonNumber('{?}');
     $p->ValueIs(']');
   }
 );
 
 ###############################################################################
 Register 
-( 'PortIdBus', sub 
+( 'ColonNumber', sub 
 ###############################################################################
   {
     my $p = shift;
-    $p->TypeIs('Identifier');
-    $p->ValueIs('[');
-    $p->TypeIs('Number');
     $p->ValueIs(':');
     $p->TypeIs('Number');
-    $p->ValueIs(']');
   }
 );
 
@@ -387,7 +376,7 @@ Register
   {
     my $p = shift;
     $p->ValueIs('{');
-    $p->PortReference('{+} /,/');
+    $p->PortReference('{+}/,/');
     $p->ValueIs('}');
   }
 );

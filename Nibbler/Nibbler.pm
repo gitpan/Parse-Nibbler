@@ -11,7 +11,7 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.01';
+our $VERSION = '1.02';
 
 
 use Carp;
@@ -47,7 +47,6 @@ sub Register
 
   my ($calling_package) = caller;
 
-
   print "registering rule $rulename in package $calling_package \n" if ($main::DEBUG);
 
   no strict;
@@ -59,15 +58,19 @@ sub Register
       {
 	my $p = shift(@_);
 	my $rule_quantifier = shift(@_);
-	$rule_quantifier = '' unless(defined($rule_quantifier));
 
 	my ($min, $max, $separator);
 
+	if(!(defined($rule_quantifier)))
+	  {
+	    $min = 1;
+	    $max = 1;
+	    $rule_quantifier='';
+	  }
 	# quantity is specified via {xxx} syntax
-	if( $rule_quantifier =~ s/\{(.+)\}// )
+	elsif( $rule_quantifier =~ s/\{(.+)\}// )
 	  {
 	    my $qty=$1;
-	    $qty =~ s/\s//g;
 	
 	    # {?} means 0 or 1,
 	    if ( $qty eq '?' )
@@ -75,46 +78,39 @@ sub Register
 		$min = 0;
 		$max = 1;
 	      }
-
 	    # {+} means 1 or more,
 	    elsif ( $qty eq '+' )
 	      {
 		$min = 1;
 	      }
-
 	    # {*} means 0 or more,
 	    elsif ( $qty eq '*' )
 	      {
 		$min = 0;
 	      }
-
 	    # {3} means exactly 3
 	    elsif( $qty =~ /^(\d+)$/ )
 	      {
 		$min = $1;
 		$max = $min;
 	      }
-
 	    # {3:} means 3 or more
 	    elsif ( $qty =~ /^(\d+)\:$/ )
 	      {
 		$min = $1;
 	      }
-
 	    # {3:5} means 3 to 5, inclusive
 	    elsif ( $qty =~ /^(\d+)\:(\d+)$/ )
 	      {
 		$min = $1;
 		$max = $2;
 	      }
-
 	    else
 	      {
 		$p->FatalError("$pkg_rule called with unknown quantifier {$qty}");
 	      }
-
 	  }
-	else
+	else # could define a separator value with no numeric quantifier.
 	  {
 	    $min = 1;
 	    $max = 1;
@@ -123,28 +119,23 @@ sub Register
 	# separator for a list is specified with /separator/
 	# currently, it MUST be a string literal.
 	# i.e. cant use another rule to define a separator.
-	# also, separator cannot contain whitespace or be a null string
+	# note: separator must be a SINGLE item returned by lexer.
+	# if lexer returns // as two individual things, then
+	# you can't use it as a separator, since comparison will always fail.
+	# also, separator cannot contain whitespace or be a null string.
+	# i.e. if you want a weird separator, write your lexer to detect it
+	# and return it as an atomic unit.
 	if ($rule_quantifier =~ s/\/(.+)\///)
 	  {
 	    $separator = $1;
-	    if($separator =~ /\s/)
-	      {
-		$p->FatalError ("separator /$separator/ cannot contain whitespace");
-	      }
-	    if(length($separator) == 0)
-	      {
-		$p->FatalError ("separator of length zero is not supported");
-	      }
 	  }
 
-	# if there is anything else in the quantifier, 
+	# if there is anything else in the quantifier,
 	# we don't know how to handle it.
-	
-	$rule_quantifier =~ s/\s//g;
 	if($rule_quantifier)
 	  {
 	    $p->FatalError
-	      ("'$pkg_rule' called with unknown quantifier $rule_quantifier");
+	      ("'$pkg_rule' called with unknown quantifier '$rule_quantifier'");
 	    # should probably use caller() to print out who called this rule
 	    # what file, what line number, etc.
 	  }
@@ -153,33 +144,23 @@ sub Register
 
 	# create an array to contain the results of this rule
 	my $this_rule_results = [];
-	my $first_rule = 0;
-	if(!(exists($p->{list_of_rules_in_progress})))
-	  {
-	    $p->{list_of_rules_in_progress} = [$this_rule_results];
-	    push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
-	    $first_rule = 1;
-	  }
-	else
-	  {
-	    push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
-	    push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
-	  }
+
+	push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
+	push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
 
 	#######################################################
 	# check the acceptable quantity of rules are present
 	#######################################################
 	my $eval_error='';
-	my $rule_succeeded=0;
 	my $rules_found=0;
 
 	while(1)
 	  {
 	    eval
 	      {
-		$rule_succeeded=&$coderef($p, @_);
+		&$coderef($p, @_);
+		$rules_found++;
 	      };
-
 
 	    if($@)
 	      {
@@ -188,12 +169,7 @@ sub Register
 		last;
 	      }
 
-	    $rules_found++;
-
-	    if ( (defined($max)) and ($rules_found >= $max) )
-	      {
-		last;
-	      }
+	    last if ( (defined($max)) and ($rules_found >= $max) );
 
 	    # now look for a separator
 	    if(defined($separator))
@@ -226,10 +202,9 @@ sub Register
 
 	print "CCC rule: $pkg_rule,  eval is $eval_error \n" if ($main::DEBUG);
 
-
 	# no matter what, pop the top off the current rule array.
 	# want current rule to revert to previous rule.
-	my $pop = pop(@{$p->{list_of_rules_in_progress}});
+	pop(@{$p->{list_of_rules_in_progress}});
 
 	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
@@ -279,12 +254,10 @@ sub Register
 	  }
 	print "EEE rule: $pkg_rule, eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
-	$p->ThrowRule($eval_error) if ( defined($eval_error) and ($eval_error) );
+	$p->ThrowRule($eval_error) if ( ($eval_error) );
 	return $ret;
       }
-
 }
-
 
 #############################################################################
 #############################################################################
@@ -303,7 +276,7 @@ sub new
 
 	open(my $handle, $filename) or confess "Error opening $filename \n";
 
-	my $obj =
+	my $p =
 	  {
 	   filename=>$filename,
 	   handle=>$handle,
@@ -312,7 +285,11 @@ sub new
 
 	  };
 
-	bless $obj, $pkg;
+	my $start_rule=[];
+	$p->{list_of_rules_in_progress} = [$start_rule];
+	push(@{$p->{list_of_rules_in_progress}}, $start_rule);
+
+	bless $p, $pkg;
 
 }
 
@@ -492,7 +469,6 @@ sub PutRuleContentsInBoneYard
     {
       my $item=pop(@{$rule});
 
-
       if(ref($item) and (ref($item) ne 'Lexical') )
 	{
 	  $p->PutRuleContentsInBoneYard($item);
@@ -502,8 +478,6 @@ sub PutRuleContentsInBoneYard
 	  $p->PutItemInBoneYard( $item );
 	}
     }
-
-
 }
 
 
@@ -560,7 +534,6 @@ sub ValueIs
       $p->ThrowRule("Expected value '$value'");
       return 0;
     }
-
 }
 
 ###############################################################################
@@ -584,7 +557,6 @@ sub AlternateValues
   $p->PutItemInBoneYard( $item );
   $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
-
 }
 
 
@@ -606,24 +578,19 @@ sub AlternateRules
 	  $arguments = $1;
 	}
 
-      my $success=0;
-
       eval
 	{
 	  no strict;
-	  $success = $p -> $alternate ( $arguments );
+	  $p -> $alternate ( $arguments );
 	};
 
       $p->DieOnFatalError;
 
-      #return 1 if($success);
       return 1 if(!($@));
-
     }
 
   $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
-
 }
 
 #############################################################################
@@ -827,7 +794,6 @@ $p->Name('{1:3}');
 This indicates there are at least 2 Name rules expected:
 $p->Name('{2:');
 
-
 Separators are specified using the following string format:
 
      /separator/
@@ -838,6 +804,10 @@ $p->Name('{1:}/,/');
 
 It is the job of the Register function to make sure this additional
 functionality is provided transparently and automagically to you.
+
+
+If you call a rule with no quantifier and no separator,
+the rule will assume the quantifier is 1 and there is no separator.
 
 
 

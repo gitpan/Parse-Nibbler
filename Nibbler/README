@@ -28,6 +28,10 @@ t/ subdirectory and take a look at the test examples.
 The main documentation is POD at the end of the 
 Parse::Nibbler.pm file itself.
 
+Contained in the t/ subdirectory is a grammar for
+parsing gate level verilog netlists, VerilogGrammar.pm.
+It parses about 115 lines of verilog per second.
+
 
 Current state of package: Alpha
 

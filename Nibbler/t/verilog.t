@@ -24,15 +24,37 @@ use Data::Dumper;
 
 use VerilogGrammar;
 
-my $parser = VerilogGrammar->new('t/verilog.v');
+my $filename = 't/verilog.v';
+
+$filename = shift(@ARGV) if(scalar(@ARGV));
+
+
+my $start = time;
+
+my $p = VerilogGrammar->new($filename);
 eval
 {
-$parser->SourceText;
+$p->SourceText;
 };
 
 print $@;
 
-print Dumper $parser;
+my $end = time;
 
+print Dumper $p;
+
+
+my $duration = $end - $start;
+$duration = 1 unless($duration);
+
+print "duration is $duration seconds \n";
+
+my $line = $p->{line_number};
+
+print "total number of lines is $line \n";
+
+my $rate = $line / $duration;
+
+print "lines per second = $rate \n";
 
 print "ok 2\n";
