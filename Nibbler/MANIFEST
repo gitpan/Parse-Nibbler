@@ -1,0 +1,8 @@
+README
+Changes
+MANIFEST
+Makefile.PL
+Nibbler.pm
+t/test.t
+t/VerilogGrammar.pm
+t/short.v
