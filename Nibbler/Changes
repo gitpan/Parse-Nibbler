@@ -44,3 +44,6 @@ Revision history for Perl extension Parse::Nibbler.
 			alternates that can connect to port.
 		- tried a couple of tweaks to speed up overall code.
 
+1.04	Tue Oct 23 2001
+		- verilog grammar needs to accept underscore as a 
+			valid leading character for identifiers.

@@ -17,7 +17,7 @@ our @ISA = qw( Parse::Nibbler );
 use Parse::Nibbler;
 use Data::Dumper;
 
-our $VERSION = '1.03';
+our $VERSION = '1.04';
 
 
 #############################################################################
@@ -75,7 +75,7 @@ sub Lexer
 
       while(1)
 	{
-	  if ( $p->{current_line} =~ /\G([a-zA-Z][a-zA-Z0-9_\$]*)/gc )
+	  if ( $p->{current_line} =~ /\G([a-zA-Z_][a-zA-Z0-9_\$]*)/gc )
 	    {$identifier .= $1;}
 
 	  elsif($p->{current_line} =~ /\G(\\[^\s]+)\s/gc) 
@@ -347,7 +347,7 @@ Register
   {
     $_[0]->AlternateRules
       ( 
-       'PortReference', 'ConcatenatedPortReference', 'Number'  
+       'PortReference', 'ConcatenatedPortReference'
       );
   }
 );
@@ -355,6 +355,19 @@ Register
 ###############################################################################
 Register 
 ( 'PortReference', sub 
+###############################################################################
+  {
+    $_[0]->AlternateRules
+      ( 
+       'IdentifierWithPossibleBitSpecifier', 'Number'
+      );
+  }
+);
+
+
+###############################################################################
+Register 
+( 'IdentifierWithPossibleBitSpecifier', sub 
 ###############################################################################
   {
     my $p = $_[0];
