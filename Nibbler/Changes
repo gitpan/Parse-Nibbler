@@ -56,3 +56,6 @@ Revision history for Perl extension Parse::Nibbler.
 		-	and one that doesn't take any arguments (faster)
 		- big_verilog.t benchmarks at 650 lines per second.
 		- include a rough draft of a profiler package
+
+1.06	Wed Oct 31 2001
+		- minor speed improvements (750 lines per second)

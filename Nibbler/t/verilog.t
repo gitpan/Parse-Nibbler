@@ -23,6 +23,17 @@ use lib "t";
 use Data::Dumper;
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
 
+
+
+use constant list_of_rules_in_progress => 0;
+use constant line_number=> 1;
+use constant current_line => 2;
+use constant handle => 3;
+use constant lexical_boneyard => 4;
+use constant filename => 5;
+
+
+
 #use Profiler;
 
 $Profiler::do_not_instrument_this_sub{main::Parse::Nibbler::DieOnFatalError}=1;
@@ -56,7 +67,7 @@ print Dumper $p;
 
 print "delay_time is $delay_time seconds \n";
 
-my $line = $p->{line_number};
+my $line = $p->[line_number];
 
 print "total number of lines is $line \n";
 

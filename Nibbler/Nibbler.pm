@@ -11,13 +11,22 @@ require 5.005_62;
 use strict;
 use warnings;
 
-our $VERSION = '1.05';
+our $VERSION = '1.06';
 
 
 use Carp;
 use Data::Dumper;
 
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
+
+
+use constant list_of_rules_in_progress => 0;
+use constant line_number => 1;
+use constant current_line => 2;
+use constant handle => 3;
+use constant lexical_boneyard => 4;
+use constant filename => 5;
+
 
 #############################################################################
 #############################################################################
@@ -166,8 +175,8 @@ sub __register_long
 	# create an array to contain the results of this rule
 	my $this_rule_results = [];
 
-	push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
-	push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
+	push(@{$p->[list_of_rules_in_progress]->[-1]}, $this_rule_results);
+	push(@{$p->[list_of_rules_in_progress]}, $this_rule_results);
 
 	#######################################################
 	# check the acceptable quantity of rules are present
@@ -225,7 +234,7 @@ sub __register_long
 
 	# no matter what, pop the top off the current rule array.
 	# want current rule to revert to previous rule.
-	pop(@{$p->{list_of_rules_in_progress}});
+	pop(@{$p->[list_of_rules_in_progress]});
 
 	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
@@ -238,12 +247,12 @@ sub __register_long
 	    $p->PutRuleContentsInBoneYard($this_rule_results);
 	    $this_rule_results = undef;
 	    if(
-	       (ref($p->{list_of_rules_in_progress}) eq 'ARRAY')
+	       (ref($p->[list_of_rules_in_progress]) eq 'ARRAY')
 	       and
-	       (ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
+	       (ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
 	      )
 	      {
-		pop(@{$p->{list_of_rules_in_progress}->[-1]});
+		pop(@{$p->[list_of_rules_in_progress]->[-1]});
 	      }
 	    $ret =  0;
 	  }
@@ -302,20 +311,17 @@ sub __register_short
 	# create an array to contain the results of this rule
 	my $this_rule_results = [];
 
-	push(@{$p->{list_of_rules_in_progress}->[-1]}, $this_rule_results);
-	push(@{$p->{list_of_rules_in_progress}}, $this_rule_results);
+	push(@{$p->[list_of_rules_in_progress]->[-1]}, $this_rule_results);
+	push(@{$p->[list_of_rules_in_progress]}, $this_rule_results);
 
 	#######################################################
 	# check the acceptable quantity of rules are present
 	#######################################################
 	my $eval_error='';
-	my $rules_found=0;
-
 
 	eval
 	  {
 	    &$coderef($p);
-	    $rules_found++;
 	  };
 
 	if($@)
@@ -329,7 +335,7 @@ sub __register_short
 
 	# no matter what, pop the top off the current rule array.
 	# want current rule to revert to previous rule.
-	pop(@{$p->{list_of_rules_in_progress}});
+	pop(@{$p->[list_of_rules_in_progress]});
 
 	print "DDD rule: $pkg_rule,  eval is $eval_error parser is ". Dumper $p if ($main::DEBUG);
 
@@ -342,12 +348,12 @@ sub __register_short
 	    $p->PutRuleContentsInBoneYard($this_rule_results);
 	    $this_rule_results = undef;
 	    if(
-	       (ref($p->{list_of_rules_in_progress}) eq 'ARRAY')
+	       (ref($p->[list_of_rules_in_progress]) eq 'ARRAY')
 	       and
-	       (ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
+	       (ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
 	      )
 	      {
-		pop(@{$p->{list_of_rules_in_progress}->[-1]});
+		pop(@{$p->[list_of_rules_in_progress]->[-1]});
 	      }
 	    $ret =  0;
 	  }
@@ -380,19 +386,17 @@ sub new
 
 	open(my $handle, $filename) or confess "Error opening $filename \n";
 
-	my $p =
-	  {
-	   filename=>$filename,
-	   handle=>$handle,
-	   current_line=>'',
-	   line_number => 0,
-	   lexical_boneyard => [],
+	my $p = [];
 
-	  };
+	$p->[filename] = $filename;
+	$p->[handle] = $handle;
+	$p->[current_line] = '';
+	$p->[line_number] = 0;
+	$p->[lexical_boneyard] = [];
 
 	my $start_rule=[];
-	$p->{list_of_rules_in_progress} = [$start_rule];
-	push(@{$p->{list_of_rules_in_progress}}, $start_rule);
+	$p->[list_of_rules_in_progress] = [$start_rule];
+	push(@{$p->[list_of_rules_in_progress]}, $start_rule);
 
 	bless $p, $pkg;
 
@@ -421,51 +425,51 @@ sub Lexer
 
   while(1)
     {
-      my $line = $p->{line_number};
-      my $col = pos($p->{current_line});
+      my $line = $p->[line_number];
+      my $col = pos($p->[current_line]);
 
       # if at end of line
       if( 
-	 ( length($p->{current_line}) == 0 )
+	 ( length($p->[current_line]) == 0 )
 	 or
-	 ( length($p->{current_line}) == pos($p->{current_line}) )
+	 ( length($p->[current_line]) == pos($p->[current_line]) )
 	 )
 	{
-	  $p->{line_number} ++;
-	  my $fh = $p->{handle};
-	  $p->{current_line} = <$fh>;
-	  return undef unless(defined($p->{current_line}));
-	  chomp($p->{current_line});
-	  pos($p->{current_line}) = 0;
+	  $p->[line_number] ++;
+	  my $fh = $p->[handle];
+	  $p->[current_line] = <$fh>;
+	  return undef unless(defined($p->[current_line]));
+	  chomp($p->[current_line]);
+	  pos($p->[current_line]) = 0;
 	  redo;
 	}
 
       # delete any leading whitespace and check it again
-      if( $p->{current_line} =~ /\G\s+/gc) 
+      if( $p->[current_line] =~ /\G\s+/gc) 
 	{
 	  redo;
 	}
 
       # look for comment to end of line
-      if($p->{current_line} =~ /\G\#.*/gc)
+      if($p->[current_line] =~ /\G\#.*/gc)
 	{
 	  redo;
 	}
 
-      if ($p->{current_line} =~ /\G([a-zA-Z]\w*)/gc) 
+      if ($p->[current_line] =~ /\G([a-zA-Z]\w*)/gc) 
 	{
 	  return bless 
 	    [ 'Identifier', $1, $line, $col ],
 	      'Lexical';
 	}
 
-      if ($p->{current_line} =~ /\G(\d+)/gc)
+      if ($p->[current_line] =~ /\G(\d+)/gc)
 	{
 	  return bless [ 'Digits', $1, $line, $col ],
 	      'Lexical';
 	}
 
-      $p->{current_line} =~ /\G(.)/gc;
+      $p->[current_line] =~ /\G(.)/gc;
 
       return bless [ $1, $1, $line, $col  ],
 	'Lexical';
@@ -480,10 +484,9 @@ sub Lexer
 sub FatalError
 #############################################################################
 {
-  my ($p,$msg) = @_;
   eval
     {
-      $p->ThrowRule($msg);
+      $_[0]->ThrowRule($_[1]);
     };
   print $@;
   exit;
@@ -494,23 +497,25 @@ sub FatalError
 sub ThrowRule
 ###############################################################################
 {
-    my ($p,$msg) = @_;
-    $msg =~ s/^!!Parse::Nibbler::ThrowRule!!//;
-    die ("!!Parse::Nibbler::ThrowRule!!" . $msg . "\n" );
+  my $msg = $_[1];
+  if(substr($msg, 0, 2) eq '!!')
+    {substr($msg, 0, 29, '');}
+  die ("!!Parse::Nibbler::ThrowRule!!" . $msg . "\n" );
 }
 
 ###############################################################################
 sub DieOnFatalError
 ###############################################################################
 {
-    my $p = $_[0];
+  my $p = $_[0];
 
-    return unless($@);
-    my $error = $@;
-    unless($error =~ s/!!Parse::Nibbler::ThrowRule!!//)
-      {
-	$p->FatalError($error);
-      }
+  return unless($@);
+  my $error = $@;
+  unless(substr($error, 0, 2) eq '!!')
+    {
+      substr($error, 0, 29, '');
+      $p->FatalError($error);
+    }
 }
 
 
@@ -520,45 +525,47 @@ sub GetItem
 {
   my $p = $_[0];
 
-  my $item;
-  if (scalar(@{$p->{lexical_boneyard}}))
+  #my $item;
+  if (scalar(@{$p->[lexical_boneyard]}))
     {
-      $item = pop(@{$p->{lexical_boneyard}});
+      return  pop(@{$p->[lexical_boneyard]});
     }
   else
     {
-      $item = $p->Lexer;
+      return  $p->Lexer;
     }
 
-  return $item;
+  #return $item;
 }
 ###############################################################################
 
-###############################################################################
-sub PutItemInCurrentRule
-###############################################################################
-{
-    my ($p,$item) = @_;
+################################################################################
+#sub PutItemInCurrentRule
+################################################################################
+#{
+#    my ($p,$item) = @_;
+#
+#    if(ref($p->[list_of_rules_in_progress]->[-1]) eq 'ARRAY')
+#      {
+#	
+#	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
+#      }
+#    else
+#      {
+#	print "NOT AN ARRAY\n";
+#	push(@{$p->[list_of_rules_in_progress]}, $item );
+#      }
+#}
 
-    if(ref($p->{list_of_rules_in_progress}->[-1]) eq 'ARRAY')
-      {
-	push(@{$p->{list_of_rules_in_progress}->[-1]}, $item );
-      }
-    else
-      {
-	push(@{$p->{list_of_rules_in_progress}}, $item );
-      }
-}
 
-
-###############################################################################
-sub PutItemInBoneYard
-###############################################################################
-{
-    my ($p,$item) = @_;
-
-    push(@{$p->{lexical_boneyard}}, $item );
-}
+################################################################################
+#sub PutItemInBoneYard
+################################################################################
+#{
+#    my ($p,$item) = @_;
+#
+#    push(@{$p->[lexical_boneyard]}, $item );
+#}
 
 #############################################################################
 sub PutRuleContentsInBoneYard
@@ -576,8 +583,8 @@ sub PutRuleContentsInBoneYard
 	}
       else
 	{
-#	  $p->PutItemInBoneYard( $item );
-	  push(@{$p->{lexical_boneyard}}, $item );
+	  #	  $p->PutItemInBoneYard( $item );
+	  push(@{$p->[lexical_boneyard]}, $item );
 
 	}
     }
@@ -601,21 +608,24 @@ sub PutRuleContentsInBoneYard
 sub TypeIs
 ###############################################################################
 {
-  my ($p, $type) = @_;
+#  my ($p, $type) = @_;
+  my $p = $_[0];
 
   my $item = $p->GetItem;
 
-  if($item->[0] eq $type)
+  if($item->[0] eq $_[1])
     {
-      $p->PutItemInCurrentRule( $item );
+      #      $p->PutItemInCurrentRule( $item );
+	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
+
       return 1;
     }
   else
     {
-#      $p->PutItemInBoneYard( $item );
-      push(@{$p->{lexical_boneyard}}, $item );
+      #      $p->PutItemInBoneYard( $item );
+      push(@{$p->[lexical_boneyard]}, $item );
 
-      $p->ThrowRule("Expected type '$type'");
+      $p->ThrowRule("Expected type '".$_[1]."'");
       return 0;
     }
 }
@@ -624,21 +634,23 @@ sub TypeIs
 sub ValueIs
 ###############################################################################
 {
-  my ($p, $value) = @_;
+#  my ($p, $value) = @_;
+  my $p = $_[0];
 
   my $item = $p->GetItem;
 
-  if($item->[1] eq $value)
+  if($item->[1] eq $_[1])
     {
-      $p->PutItemInCurrentRule( $item );
+      #      $p->PutItemInCurrentRule( $item );
+	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
       return 1;
     }
   else
     {
-#      $p->PutItemInBoneYard( $item );
-      push(@{$p->{lexical_boneyard}}, $item );
+      #      $p->PutItemInBoneYard( $item );
+      push(@{$p->[lexical_boneyard]}, $item );
 
-      $p->ThrowRule("Expected value '$value'");
+      $p->ThrowRule("Expected value '".$_[1]."'");
       return 0;
     }
 }
@@ -656,13 +668,14 @@ sub AlternateValues
     {
       if ($alternate eq $actual_value)
       {
-	$p->PutItemInCurrentRule( $item );
+#	$p->PutItemInCurrentRule( $item );
+	push(@{$p->[list_of_rules_in_progress]->[-1]}, $item );
 	return 1;
       }
     }
 
 #  $p->PutItemInBoneYard( $item );
-  push(@{$p->{lexical_boneyard}}, $item );
+  push(@{$p->[lexical_boneyard]}, $item );
 
   $p->ThrowRule("Expected one of " . join(' | ', @_) . "\n" );
   return 0;
