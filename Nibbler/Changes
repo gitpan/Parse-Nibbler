@@ -12,3 +12,6 @@ Revision history for Perl extension Parse::Nibbler.
 
 0.22	Tue Aug 28
 		- added link to VerilogGrammar.pm in top directory.
+
+0.23	Tue Aug 28
+		- put use base module name in quotes, in VerilogGrammar.pm

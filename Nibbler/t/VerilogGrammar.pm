@@ -11,7 +11,7 @@ require 5.005_62;
 
 use strict;
 use warnings;
-use base Parse::Nibbler;
+use base 'Parse::Nibbler';
 use Data::Dumper;
 
 our $VERSION = '0.01';
